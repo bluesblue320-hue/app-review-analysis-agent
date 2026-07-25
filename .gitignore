@@ -1,0 +1,28 @@
+# Secrets and local Streamlit configuration
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local agent/runtime files
+.agents/
+.codex/
+.superpowers/
+docs/superpowers/
+
+# Logs
+*.log
+
+# Raw/processed review data and generated word-cloud output
+*.csv
+*_wordcloud.html
