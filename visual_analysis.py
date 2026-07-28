@@ -3,13 +3,17 @@ import re
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+from review_fields import (
+    CATEGORY_COLUMN,
+    CONTENT_COLUMN,
+    RATING_COLUMN,
+    REQUIRED_REVIEW_COLUMNS,
+    RISK_LABEL_COLUMN,
+    SENTIMENT_COLUMN,
+    TIME_COLUMN_CANDIDATES,
+    TOKEN_COLUMN,
+)
 
-RATING_COLUMN = "评分"
-CONTENT_COLUMN = "内容"
-SENTIMENT_COLUMN = "情绪指数"
-TOKEN_COLUMN = "分词内容"
-CATEGORY_COLUMN = "问题类型"
-RISK_LABEL_COLUMN = "风险标签"
 
 ISSUE_KEYWORDS = {
     "账号类": ["封号", "禁言", "限流", "实名", "申诉", "账号", "登录", "注销"],
@@ -63,8 +67,7 @@ def prepare_dashboard_data(df):
             ]
         )
 
-    required_columns = {RATING_COLUMN, CONTENT_COLUMN}
-    missing_columns = required_columns - set(df.columns)
+    missing_columns = REQUIRED_REVIEW_COLUMNS - set(df.columns)
     if missing_columns:
         missing = "、".join(sorted(missing_columns))
         raise ValueError(f"缺少必要列：{missing}")
@@ -315,7 +318,14 @@ def sentiment_scatter_data(df):
     return df[columns].copy()
 
 
-def extract_keyword_scores(text_series, top_n=15):
+def extract_keyword_scores(
+    text_series,
+    top_n=15,
+    *,
+    max_features=500,
+    ngram_range=(1, 1),
+    round_digits=4,
+):
     empty_result = pd.DataFrame(columns=["关键词", "权重"])
     if text_series is None or text_series.empty:
         return empty_result
@@ -325,7 +335,10 @@ def extract_keyword_scores(text_series, top_n=15):
     if clean_series.empty:
         return empty_result
 
-    vectorizer = TfidfVectorizer(max_features=500)
+    vectorizer = TfidfVectorizer(
+        max_features=max_features,
+        ngram_range=ngram_range,
+    )
     try:
         tfidf_matrix = vectorizer.fit_transform(clean_series)
     except ValueError:
@@ -339,7 +352,8 @@ def extract_keyword_scores(text_series, top_n=15):
         .head(top_n)
         .reset_index(drop=True)
     )
-    keyword_df["权重"] = keyword_df["权重"].round(4)
+    if round_digits is not None:
+        keyword_df["权重"] = keyword_df["权重"].round(round_digits)
     return keyword_df
 
 
@@ -348,7 +362,7 @@ def sentiment_trend(df):
         return pd.DataFrame(columns=["日期", "平均情绪指数", "平均评分", "评论数"])
 
     time_column = None
-    for candidate in ["时间", "日期", "评论时间", "发布时间"]:
+    for candidate in TIME_COLUMN_CANDIDATES:
         if candidate in df.columns:
             time_column = candidate
             break

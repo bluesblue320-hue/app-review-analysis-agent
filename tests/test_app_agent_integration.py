@@ -2,52 +2,45 @@ import unittest
 from pathlib import Path
 
 
-class AppAgentIntegrationTests(unittest.TestCase):
+class AppApiIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = Path("app.py").read_text(encoding="utf-8")
 
-    def test_imports_agent_workflow(self):
-        self.assertIn("from agent_workflow import (", self.source)
-        self.assertIn("run_agent,", self.source)
-        self.assertIn("match_ai_insights,", self.source)
+    def test_imports_only_http_client_for_business_workflows(self):
+        self.assertIn("from frontend.api_client import (", self.source)
+        self.assertNotIn("from visual_analysis import", self.source)
+        self.assertNotIn("from review_preprocessing import", self.source)
+        self.assertNotIn("from agent_workflow import", self.source)
+        self.assertNotIn("from ai_analysis import", self.source)
 
-    def test_renders_agent_scope_and_question_controls(self):
+    def test_uploads_csv_and_saves_dataset_id(self):
+        self.assertIn("client.upload_dataset(", self.source)
+        self.assertIn('st.session_state["dataset_id"] = dataset_id', self.source)
+        self.assertIn('st.session_state["uploaded_file_signature"]', self.source)
+
+    def test_sends_filters_to_summary_endpoint(self):
+        self.assertIn("current_filters = filters_payload(", self.source)
+        self.assertIn("client.get_summary(", self.source)
+        self.assertIn("selected_categories", self.source)
+        self.assertIn("high_risk_only", self.source)
+
+    def test_renders_agent_scope_and_uses_backend_agent(self):
         self.assertIn('st.header("🤖 自然语言分析 Agent")', self.source)
-        self.assertIn('"Agent 分析范围"', self.source)
         self.assertIn('options=["完整上传数据", "当前筛选结果"]', self.source)
-        self.assertIn('st.text_input(', self.source)
-        self.assertIn('st.button("让 Agent 分析")', self.source)
+        self.assertIn("client.query_agent(", self.source)
+        self.assertNotIn("run_agent(", self.source)
 
-    def test_uses_scope_matched_ai_insights(self):
+    def test_ai_insights_are_generated_by_backend(self):
+        self.assertIn("client.generate_ai_insights(", self.source)
         self.assertIn('st.session_state["ai_insights_scope_signature"]', self.source)
-        self.assertIn("matched_ai_insights = match_ai_insights(", self.source)
-        self.assertIn("df=agent_df", self.source)
-        self.assertIn("ai_insights=matched_ai_insights", self.source)
-        self.assertIn("scope=agent_scope", self.source)
+        self.assertNotIn("analyze_reviews(", self.source)
 
-    def test_dashboard_uses_only_scope_matched_ai_insights(self):
-        self.assertIn("current_insights = match_ai_insights(", self.source)
-        self.assertIn("        filtered_df,\n    )", self.source)
-        self.assertIn(
-            "priority_df = calculate_priority_table(filtered_df, ai_insights=current_insights, top_n=5)",
-            self.source,
-        )
-        self.assertIn("insights = current_insights", self.source)
-        self.assertIn(
-            'if st.session_state.get("ai_insights") and current_insights is None:',
-            self.source,
-        )
-        self.assertIn("请重新生成 AI 洞察", self.source)
-        self.assertNotIn(
-            'current_insights = st.session_state.get("ai_insights")', self.source
-        )
-        self.assertNotIn('insights = st.session_state.get("ai_insights")', self.source)
-
-    def test_empty_filter_no_longer_stops_complete_data_agent(self):
+    def test_handles_api_errors_without_stopping_complete_scope_agent(self):
+        self.assertIn("except ApiClientError as exc:", self.source)
         warning = 'st.warning("当前筛选条件下没有评论，请放宽筛选条件。")'
         warning_position = self.source.index(warning)
-        following_source = self.source[warning_position:warning_position + 180]
+        following_source = self.source[warning_position : warning_position + 180]
         self.assertNotIn("st.stop()", following_source)
 
 

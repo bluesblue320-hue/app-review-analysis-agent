@@ -5,22 +5,24 @@ import hashlib
 import pandas as pd
 
 from intent_router import detect_intent
-from visual_analysis import (
+from review_fields import (
     CATEGORY_COLUMN,
     CONTENT_COLUMN,
     RATING_COLUMN,
+    REQUIRED_REVIEW_COLUMNS,
     RISK_LABEL_COLUMN,
     SENTIMENT_COLUMN,
+    TIME_COLUMN_CANDIDATES,
     TOKEN_COLUMN,
+    VERSION_COLUMN,
+)
+from visual_analysis import (
     calculate_health_metrics,
     calculate_priority_table,
     extract_keyword_scores,
     prepare_dashboard_data,
     sentiment_trend,
 )
-
-
-VERSION_COLUMN = "版本"
 
 
 def _result(intent, answer, dataframes=None):
@@ -35,7 +37,7 @@ def _prepare_agent_data(df):
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return pd.DataFrame(), "当前分析范围内没有评论可供分析。"
 
-    missing_columns = {RATING_COLUMN, CONTENT_COLUMN} - set(df.columns)
+    missing_columns = REQUIRED_REVIEW_COLUMNS - set(df.columns)
     if missing_columns:
         missing = "、".join(sorted(missing_columns))
         return pd.DataFrame(), f"数据缺少必要列：{missing}。"
@@ -110,10 +112,7 @@ def dataframe_scope_signature(df):
         CATEGORY_COLUMN,
         RISK_LABEL_COLUMN,
         VERSION_COLUMN,
-        "时间",
-        "日期",
-        "评论时间",
-        "发布时间",
+        *TIME_COLUMN_CANDIDATES,
     ]
     columns = [column for column in preferred_columns if column in df.columns]
     if not columns:
