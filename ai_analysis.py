@@ -6,11 +6,21 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from review_fields import (
+    CONTENT_COLUMN,
+    RATING_COLUMN,
+    REQUIRED_REVIEW_COLUMNS,
+    SENTIMENT_COLUMN,
+    TIME_COLUMN,
+    TITLE_COLUMN,
+    VERSION_COLUMN,
+)
+
 
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
-REQUIRED_COLUMNS = {"评分", "内容"}
+REQUIRED_COLUMNS = REQUIRED_REVIEW_COLUMNS
 
 
 class AiAnalysisError(Exception):
@@ -93,10 +103,10 @@ def build_review_packet(df, max_reviews=100):
         raise AiAnalysisError(f"CSV 缺少必要列：{missing}")
 
     clean_df = df.copy()
-    clean_df["内容"] = clean_df["内容"].fillna("").astype(str).str.strip()
-    clean_df = clean_df[clean_df["内容"] != ""].copy()
-    clean_df["评分"] = pd.to_numeric(clean_df["评分"], errors="coerce")
-    clean_df = clean_df.dropna(subset=["评分"])
+    clean_df[CONTENT_COLUMN] = clean_df[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    clean_df = clean_df[clean_df[CONTENT_COLUMN] != ""].copy()
+    clean_df[RATING_COLUMN] = pd.to_numeric(clean_df[RATING_COLUMN], errors="coerce")
+    clean_df = clean_df.dropna(subset=[RATING_COLUMN])
 
     if clean_df.empty:
         raise AiAnalysisError("没有可分析的有效评论。")
@@ -106,38 +116,62 @@ def build_review_packet(df, max_reviews=100):
     positive_limit = max(1, review_limit // 4)
     mismatch_limit = max(0, review_limit - negative_limit - positive_limit)
 
-    negative_pool = clean_df.sort_values(["评分"], ascending=True).head(negative_limit)
-    positive_pool = clean_df.sort_values(["评分"], ascending=False).head(positive_limit)
+    negative_pool = clean_df.sort_values([RATING_COLUMN], ascending=True).head(negative_limit)
+    positive_pool = clean_df.sort_values([RATING_COLUMN], ascending=False).head(positive_limit)
     pools = [negative_pool, positive_pool]
 
-    if mismatch_limit and "情绪指数" in clean_df.columns:
+    if mismatch_limit and SENTIMENT_COLUMN in clean_df.columns:
         scored_df = clean_df.copy()
-        scored_df["情绪指数"] = pd.to_numeric(scored_df["情绪指数"], errors="coerce")
-        mismatch_pool = scored_df[(scored_df["评分"] >= 4) & (scored_df["情绪指数"] < 30)]
-        pools.append(mismatch_pool.sort_values(["情绪指数"], ascending=True).head(mismatch_limit))
+        scored_df[SENTIMENT_COLUMN] = pd.to_numeric(
+            scored_df[SENTIMENT_COLUMN], errors="coerce"
+        )
+        mismatch_pool = scored_df[
+            (scored_df[RATING_COLUMN] >= 4) & (scored_df[SENTIMENT_COLUMN] < 30)
+        ]
+        pools.append(
+            mismatch_pool.sort_values([SENTIMENT_COLUMN], ascending=True).head(
+                mismatch_limit
+            )
+        )
 
     selected = pd.concat(pools).drop_duplicates().head(review_limit)
-    include_columns = [col for col in ["评分", "情绪指数", "标题", "内容", "版本", "时间"] if col in selected.columns]
+    include_columns = [
+        column
+        for column in (
+            RATING_COLUMN,
+            SENTIMENT_COLUMN,
+            TITLE_COLUMN,
+            CONTENT_COLUMN,
+            VERSION_COLUMN,
+            TIME_COLUMN,
+        )
+        if column in selected.columns
+    ]
     reviews = []
     for row in selected[include_columns].to_dict(orient="records"):
         reviews.append({key: value for key, value in row.items() if pd.notna(value)})
 
     rating_distribution = {
         str(int(rating)): int(count)
-        for rating, count in clean_df["评分"].round().astype(int).value_counts().sort_index().items()
+        for rating, count in clean_df[RATING_COLUMN]
+        .round()
+        .astype(int)
+        .value_counts()
+        .sort_index()
+        .items()
     }
 
     packet = {
         "metrics": {
             "total_reviews": int(len(clean_df)),
-            "average_rating": round(float(clean_df["评分"].mean()), 2),
+            "average_rating": round(float(clean_df[RATING_COLUMN].mean()), 2),
             "rating_distribution": rating_distribution,
         },
         "reviews": reviews,
     }
 
-    if "情绪指数" in clean_df.columns:
-        sentiment = pd.to_numeric(clean_df["情绪指数"], errors="coerce").dropna()
+    if SENTIMENT_COLUMN in clean_df.columns:
+        sentiment = pd.to_numeric(clean_df[SENTIMENT_COLUMN], errors="coerce").dropna()
         if not sentiment.empty:
             packet["metrics"]["average_sentiment"] = round(float(sentiment.mean()), 2)
 
