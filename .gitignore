@@ -26,3 +26,11 @@ docs/superpowers/
 # Raw/processed review data and generated word-cloud output
 *.csv
 *_wordcloud.html
+
+# Evaluation fixture must stay tracked
+!evaluation/fixtures/
+!evaluation/fixtures/*.csv
+
+# Generated evaluation reports (keep only the placeholder)
+evaluation/reports/*
+!evaluation/reports/.gitkeep

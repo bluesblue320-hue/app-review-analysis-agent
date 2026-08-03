@@ -154,6 +154,18 @@ python -m unittest discover -s tests -v
 4. 在自然语言 Agent 区域选择分析范围。
 5. 输入问题，例如“差评主要集中在哪些问题？”或“帮我生成一份评论分析报告”。
 
+## Agent 评估
+
+仓库内置可重复运行的 Agent 自动化评估（`evaluation/`），用于量化验证路由、工具选择、参数提取、非法工具拦截、数字可信度和降级能力。默认 Mock 模式不调用真实 DeepSeek，可安全用于本地开发和 CI：
+
+```bash
+python -m evaluation.evaluate_agent --mode mock
+python -m evaluation.evaluate_agent --mode mock --fail-under
+python -m evaluation.evaluate_agent --mode live --output-dir evaluation/reports/live
+```
+
+详细说明见 `evaluation/README.md`。
+
 ## 数据与安全说明
 
 - 原始 CSV、处理后的 CSV、日志、虚拟环境和 `.env` 默认不会提交到 GitHub。
