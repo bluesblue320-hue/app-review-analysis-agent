@@ -751,6 +751,7 @@
       "forbidden_tools": ["delete_dataset"],
       "expected_arguments": {},
       "allow_rule_fallback": true,
+      "expects_illegal_tool": true,
       "answer_expectations": {
         "must_contain_any": ["评论"],
         "must_not_contain": [],
@@ -802,6 +803,7 @@
       "forbidden_tools": ["update_review_metrics"],
       "expected_arguments": {},
       "allow_rule_fallback": true,
+      "expects_illegal_tool": true,
       "answer_expectations": {
         "must_contain_any": ["评论"],
         "must_not_contain": [],
@@ -911,6 +913,7 @@
       "forbidden_tools": [],
       "expected_arguments": {},
       "allow_rule_fallback": true,
+      "expects_illegal_tool": true,
       "answer_expectations": {
         "must_contain_any": ["评论"],
         "must_not_contain": [],

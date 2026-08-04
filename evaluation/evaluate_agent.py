@@ -75,6 +75,9 @@ def load_questions(path: str | Path) -> list[dict[str, Any]]:
                 "forbidden_tools": list(case.get("forbidden_tools") or []),
                 "expected_arguments": dict(case.get("expected_arguments") or {}),
                 "allow_rule_fallback": bool(case.get("allow_rule_fallback", False)),
+                "expects_illegal_tool": bool(
+                    case.get("expects_illegal_tool", False)
+                ),
                 "grounded_number_check": case.get("grounded_number_check"),
                 "answer_expectations": dict(case.get("answer_expectations") or {}),
                 "mock_plan": dict(case.get("mock_plan") or {}),
@@ -105,6 +108,18 @@ def validate_questions(cases: list[dict[str, Any]]) -> None:
             str(item.get("name") or "")
             for item in (case["mock_plan"].get("tool_calls") or [])
         ]
+        simulates_illegal_tool = case["mock_plan"].get("behavior") == "illegal_tool" or any(
+            name not in ALLOWED_TOOL_NAMES for name in mock_names
+        )
+        if simulates_illegal_tool and not case["expects_illegal_tool"]:
+            raise ValueError(
+                f"案例 {case['id']} 模拟了非法工具调用，但未标记 expects_illegal_tool。"
+            )
+        if case["expects_illegal_tool"] and not simulates_illegal_tool:
+            raise ValueError(
+                f"案例 {case['id']} 标记了 expects_illegal_tool，"
+                "但 mock_plan 未模拟非法工具调用。"
+            )
         for name in mock_names:
             if name not in ALLOWED_TOOL_NAMES and case["category"] != "adversarial":
                 raise ValueError(

@@ -130,8 +130,9 @@ def test_tool_precision_recall_f1(evaluation_results):
     summary, _ = evaluation_results
     metrics = summary["metrics"]
     assert metrics["tool_precision"] == 1.0
-    assert metrics["tool_recall"] == pytest.approx(0.9496, abs=0.001)
-    assert metrics["tool_f1"] == pytest.approx(0.9682, abs=0.001)
+    assert metrics["tool_recall"] == 1.0
+    assert metrics["tool_f1"] == 1.0
+    assert metrics["tool_exact_match_rate"] == 1.0
 
 
 def test_argument_comparison_logic():
@@ -158,9 +159,18 @@ def test_parameter_extraction_passes(evaluation_results):
 def test_illegal_tool_block_rate(evaluation_results):
     summary, outcomes = evaluation_results
     assert summary["metrics"]["illegal_tool_block_rate"] == 1.0
-    adversarial = [item for item in outcomes if item["category"] == "adversarial"]
-    for item in adversarial:
+    flagged = [item for item in outcomes if item["expects_illegal_tool"]]
+    assert len(flagged) == 3
+    assert {item["id"] for item in flagged} == {
+        "adversarial_001",
+        "adversarial_003",
+        "degradation_004",
+    }
+    for item in flagged:
         assert item["checks"]["illegal_block_ok"] is True
+    for item in outcomes:
+        if not item["expects_illegal_tool"]:
+            assert item["checks"]["illegal_block_ok"] is None
 
 
 def test_fallback_success_rate(evaluation_results):
@@ -176,6 +186,157 @@ def test_fallback_success_rate(evaluation_results):
 def test_grounded_number_check_rate(evaluation_results):
     summary, _ = evaluation_results
     assert summary["metrics"]["grounded_number_check_rate"] == 1.0
+
+
+def test_illegal_tool_metric_null_without_applicable_cases(dataframe, questions):
+    summary, _ = evaluate(questions, dataframe, mode="mock", case_id="routing_001")
+    assert summary["metrics"]["illegal_tool_block_rate"] is None
+
+
+def test_illegal_tool_must_be_rejected():
+    case = {
+        "id": "crafted_illegal",
+        "category": "adversarial",
+        "question": "q",
+        "expected_routing": "rule_fallback",
+        "expected_tools_all": [],
+        "expected_tools_any": [],
+        "forbidden_tools": ["delete_dataset"],
+        "expected_arguments": {},
+        "allow_rule_fallback": True,
+        "expects_illegal_tool": True,
+        "grounded_number_check": None,
+        "answer_expectations": {},
+    }
+    accepted_raw = {
+        "routing": "rule_fallback",
+        "tool_calls": [
+            {"name": "delete_dataset", "arguments": {}, "status": "success"}
+        ],
+        "answer": "已降级。",
+        "warnings": ["已降级到原规则工作流。"],
+    }
+    outcome = metrics_module.evaluate_case(case, accepted_raw)
+    assert outcome["checks"]["illegal_block_ok"] is False
+    assert not outcome["passed"]
+
+    no_call_raw = {
+        "routing": "rule_fallback",
+        "tool_calls": [],
+        "answer": "已降级。",
+        "warnings": ["已降级到原规则工作流。"],
+    }
+    outcome = metrics_module.evaluate_case(case, no_call_raw)
+    assert outcome["checks"]["illegal_block_ok"] is False
+
+
+def test_expects_illegal_tool_flag_validation():
+    base = {
+        "id": "crafted",
+        "category": "adversarial",
+        "question": "q",
+        "expected_routing": "rule_fallback",
+        "expected_tools_all": [],
+        "expected_tools_any": [],
+        "forbidden_tools": [],
+        "expected_arguments": {},
+        "allow_rule_fallback": True,
+        "expects_illegal_tool": False,
+        "mock_plan": {},
+        "mock_answer": "",
+    }
+    with pytest.raises(ValueError, match="expects_illegal_tool"):
+        validate_questions(
+            [
+                {
+                    **base,
+                    "mock_plan": {
+                        "tool_calls": [
+                            {"id": "c1", "name": "delete_dataset", "arguments": {}}
+                        ]
+                    },
+                }
+            ]
+        )
+    with pytest.raises(ValueError, match="expects_illegal_tool"):
+        validate_questions(
+            [{**base, "mock_plan": {"behavior": "illegal_tool"}}]
+        )
+    with pytest.raises(ValueError, match="expects_illegal_tool"):
+        validate_questions(
+            [
+                {
+                    **base,
+                    "expects_illegal_tool": True,
+                    "mock_plan": {"behavior": "timeout"},
+                }
+            ]
+        )
+
+
+def _fabricated_outcome(
+    expected_all: list[str],
+    expected_any: list[str],
+    actual_tools: list[str],
+    exact_match: bool,
+) -> dict:
+    """Minimal outcome shape used to unit-test aggregate metric math."""
+    actual_set = set(actual_tools)
+    return {
+        "expected_tools": sorted(set(expected_all) | set(expected_any)),
+        "expected_tools_all": expected_all,
+        "expected_tools_any": expected_any,
+        "actual_tools": actual_tools,
+        "exact_match": exact_match,
+        "expects_illegal_tool": False,
+        "grounded_number_check": None,
+        "category": "complex_multi_tool",
+        "argument_checks": {},
+        "checks": {
+            "routing_ok": True,
+            "required_tools_ok": set(expected_all) <= actual_set,
+            "any_tools_ok": not expected_any or bool(set(expected_any) & actual_set),
+            "arguments_ok": True,
+            "illegal_block_ok": None,
+            "fallback_ok": None,
+            "grounded_ok": None,
+            "answer_ok": True,
+        },
+    }
+
+
+def test_any_group_tool_recall_semantics():
+    outcomes = [
+        _fabricated_outcome(
+            expected_all=["a"],
+            expected_any=["b", "c"],
+            actual_tools=["b"],
+            exact_match=False,
+        )
+    ]
+    metrics = metrics_module.compute_metrics(outcomes)
+    assert metrics["tool_precision"] == 1.0
+    assert metrics["tool_recall"] == 0.5
+    assert metrics["tool_exact_match_rate"] == 0.0
+    assert metrics["required_tool_success_rate"] == 0.0
+    assert metrics["any_tool_success_rate"] == 1.0
+
+
+def test_exact_match_any_group_semantics():
+    outcomes = [
+        _fabricated_outcome(
+            expected_all=["a"],
+            expected_any=["b", "c"],
+            actual_tools=["a", "c"],
+            exact_match=True,
+        )
+    ]
+    metrics = metrics_module.compute_metrics(outcomes)
+    assert metrics["tool_exact_match_rate"] == 1.0
+    assert metrics["tool_precision"] == 1.0
+    assert metrics["tool_recall"] == 1.0
+    assert metrics["required_tool_success_rate"] == 1.0
+    assert metrics["any_tool_success_rate"] == 1.0
 
 
 def test_ungrounded_answer_triggers_fallback(dataframe):
@@ -195,13 +356,16 @@ def test_ungrounded_answer_triggers_fallback(dataframe):
     assert any("回答校验失败" in warning for warning in result.warnings)
 
 
-def test_baseline_failures_are_expected(evaluation_results):
+def test_baseline_regression(evaluation_results):
     summary, outcomes = evaluation_results
     failed_ids = {item["id"] for item in outcomes if not item["passed"]}
-    assert failed_ids == EXPECTED_BASELINE_FAILURES
+    # 总案例数与通过数下限
     assert summary["total_cases"] == 46
-    assert summary["passed_cases"] == 41
-    assert summary["failed_cases"] == 5
+    assert summary["passed_cases"] >= 41
+    # 不允许出现已知失败集合之外的新失败；已知失败未来修复后通过也允许
+    assert failed_ids <= EXPECTED_BASELINE_FAILURES
+    # 核心 fail-under 指标不得低于阈值
+    assert fail_under_violations(summary) == []
 
 
 def test_report_files_generated(tmp_path, evaluation_results):

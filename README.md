@@ -141,10 +141,10 @@ python spider.py
 ## 运行测试
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest -v
 ```
 
-当前测试覆盖 Agent 意图路由、分析工作流、AI 洞察范围匹配、看板集成和可视化数据处理等关键逻辑。
+当前测试覆盖 Agent 意图路由、分析工作流、AI 洞察范围匹配、看板集成、评估框架和可视化数据处理等关键逻辑。
 
 ## 使用流程
 

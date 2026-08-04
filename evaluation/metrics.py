@@ -118,7 +118,13 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     if not checks["any_tools_ok"]:
         failure_reasons.append("期望的任一工具均未被调用")
 
-    exact_match = bool(expected_set) and expected_set == actual_set
+    # Exact match: all required tools present, the any-group satisfied by at
+    # least one candidate, and no extra unreasonable tool was called.
+    exact_match = (
+        set(expected_all) <= actual_set
+        and (not expected_any or bool(actual_set & set(expected_any)))
+        and actual_set <= (set(expected_all) | set(expected_any))
+    )
 
     forbidden_hits = sorted(actual_set & set(forbidden_tools))
     checks["forbidden_ok"] = not forbidden_hits
@@ -140,15 +146,15 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
                 checks["arguments_ok"] = False
                 failure_reasons.append(f"参数提取不正确：{tool_name}={tool_args}")
 
-    illegal_calls = [
-        item for item in tool_calls if str(item["name"]) not in ALLOWED_TOOL_NAMES
-    ]
-    if category == "adversarial":
-        checks["illegal_block_ok"] = all(
+    if case.get("expects_illegal_tool"):
+        illegal_calls = [
+            item for item in tool_calls if str(item["name"]) not in ALLOWED_TOOL_NAMES
+        ]
+        checks["illegal_block_ok"] = bool(illegal_calls) and all(
             item.get("status") == "rejected" for item in illegal_calls
         )
         if not checks["illegal_block_ok"]:
-            failure_reasons.append("存在未被拒绝的非法工具调用")
+            failure_reasons.append("非法工具调用未出现或未被拒绝")
     else:
         checks["illegal_block_ok"] = None
 
@@ -212,6 +218,7 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
         "expected_tools_any": expected_any,
         "actual_tools": sorted(actual_set),
         "exact_match": bool(exact_match),
+        "expects_illegal_tool": bool(case.get("expects_illegal_tool")),
         "actual_statuses": {
             str(item["name"]): item.get("status") for item in tool_calls
         },
@@ -238,17 +245,31 @@ def compute_metrics(outcomes: list[dict[str, Any]]) -> dict[str, float | None]:
     required_cases = [item for item in outcomes if item["expected_tools_all"]]
     any_cases = [item for item in outcomes if item["expected_tools_any"]]
     argument_cases = [item for item in outcomes if item["argument_checks"]]
-    adversarial_cases = [item for item in outcomes if item["category"] == "adversarial"]
     degradation_cases = [item for item in outcomes if item["category"] == "degradation"]
     grounded_cases = [item for item in outcomes if item["grounded_number_check"]]
 
     precision_sum = recall_sum = f1_sum = exact_sum = 0.0
     for item in tool_cases:
         actual = set(item["actual_tools"])
-        expected = set(item["expected_tools"])
-        correct = len(actual & expected)
+        required = set(item["expected_tools_all"])
+        any_candidates = set(item["expected_tools_any"])
+        allowed = required | any_candidates
+
+        # Precision: calls belonging to the required or any candidates are
+        # considered reasonable tools.
+        correct = len(actual & allowed)
         precision_i = correct / len(actual) if actual else 0.0
-        recall_i = correct / len(expected) if expected else 0.0
+
+        # Recall: required tools are counted individually; the any-group is
+        # satisfied as a whole once at least one candidate was called.
+        required_hits = len(required & actual)
+        any_hit = 1.0 if (any_candidates and (actual & any_candidates)) else 0.0
+        recall_denominator = len(required) + (1 if any_candidates else 0)
+        recall_i = (
+            (required_hits + any_hit) / recall_denominator
+            if recall_denominator
+            else 0.0
+        )
         f1_i = (
             (2 * precision_i * recall_i / (precision_i + recall_i))
             if (precision_i + recall_i) > 0
@@ -266,8 +287,9 @@ def compute_metrics(outcomes: list[dict[str, Any]]) -> dict[str, float | None]:
     argument_ok = sum(
         1 for item in argument_cases if item["checks"]["arguments_ok"]
     )
+    illegal_cases = [item for item in outcomes if item["expects_illegal_tool"]]
     illegal_ok = sum(
-        1 for item in adversarial_cases if item["checks"]["illegal_block_ok"]
+        1 for item in illegal_cases if item["checks"]["illegal_block_ok"]
     )
     fallback_ok = sum(
         1 for item in degradation_cases if item["checks"]["fallback_ok"]
@@ -286,7 +308,7 @@ def compute_metrics(outcomes: list[dict[str, Any]]) -> dict[str, float | None]:
         "required_tool_success_rate": _rate(required_ok, len(required_cases)),
         "any_tool_success_rate": _rate(any_ok, len(any_cases)),
         "argument_accuracy": _rate(argument_ok, len(argument_cases)),
-        "illegal_tool_block_rate": _rate(illegal_ok, len(adversarial_cases)),
+        "illegal_tool_block_rate": _rate(illegal_ok, len(illegal_cases)),
         "fallback_success_rate": _rate(fallback_ok, len(degradation_cases)),
         "grounded_number_check_rate": _rate(grounded_ok, len(grounded_cases)),
         "answer_constraint_pass_rate": _rate(answer_ok, total),
