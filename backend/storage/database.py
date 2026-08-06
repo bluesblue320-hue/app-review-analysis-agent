@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     event,
 )
@@ -37,7 +38,12 @@ class DatasetModel(Base):
     filename: Mapped[str] = mapped_column(String(255))
     original_rows: Mapped[int] = mapped_column(Integer)
     valid_rows: Mapped[int] = mapped_column(Integer)
+    removed_rows: Mapped[int] = mapped_column(Integer, default=0)
+    invalid_rating_rows: Mapped[int] = mapped_column(Integer, default=0)
+    invalid_reasons_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     columns_json: Mapped[list[str]] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(64), default="")
+    analysis_version: Mapped[str] = mapped_column(String(32), default="v1")
     created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), index=True)
     expires_at: Mapped[Any] = mapped_column(DateTime(timezone=True), index=True)
     reviews: Mapped[list[ReviewModel]] = relationship(
@@ -69,6 +75,11 @@ class ReviewModel(Base):
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     risk_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (
+        UniqueConstraint("dataset_id", "row_number", name="uq_reviews_dataset_row"),
+    )
 
 
 class InsightModel(Base):
@@ -82,6 +93,12 @@ class InsightModel(Base):
     scope_signature: Mapped[str] = mapped_column(String(64), index=True)
     sample_size: Mapped[int] = mapped_column(Integer)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    provider: Mapped[str] = mapped_column(String(50), default="deepseek")
+    model_name: Mapped[str] = mapped_column(String(100), default="deepseek-v4-flash")
+    analysis_version: Mapped[str] = mapped_column(String(32), default="v1")
+    insight_fingerprint: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True
+    )
     created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), index=True)
     expires_at: Mapped[Any] = mapped_column(DateTime(timezone=True), index=True)
 

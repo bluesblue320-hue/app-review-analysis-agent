@@ -16,6 +16,10 @@ from backend.schemas.analytics import (
 from backend.services.cache_service import cache_service, summary_cache_key
 from backend.services.dataset_service import InMemoryDatasetStore
 from backend.services.insight_store import InMemoryInsightStore
+from backend.services.repositories import (
+    ANALYSIS_VERSION,
+    compute_scope_signature,
+)
 from backend.services.scope_service import ReviewScopeService
 from review_fields import (
     CATEGORY_COLUMN,
@@ -62,7 +66,14 @@ class AnalyticsService:
         if cached is not None:
             return AnalyticsSummaryResponse.model_validate(cached)
         filtered = self._scope_service.apply_filters(record.dataframe, request.filters)
-        scope_signature = dataframe_scope_signature(filtered)
+        content_hash = record.content_hash or dataframe_scope_signature(
+            record.dataframe
+        )
+        scope_signature = compute_scope_signature(
+            content_hash,
+            request.filters.model_dump(),
+            analysis_version=ANALYSIS_VERSION,
+        )
         current_insights, insight_warning = self._insight_store.resolve(
             insight_id=request.insight_id,
             dataset_id=request.dataset_id,

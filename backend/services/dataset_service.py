@@ -26,6 +26,7 @@ class DatasetRecord:
     removed_rows: int = 0
     invalid_rating_rows: int = 0
     invalid_reasons: dict[str, int] = None  # type: ignore[assignment]
+    content_hash: str = ""
 
 
 class InMemoryDatasetStore:
@@ -41,6 +42,11 @@ class InMemoryDatasetStore:
         created_at = datetime.now(UTC)
         expires_at = created_at + timedelta(days=settings.data_retention_days)
         dataset_id = f"dataset_{uuid4().hex}"
+        from backend.services.repositories import compute_content_hash
+
+        content_hash = compute_content_hash(
+            prepared, tuple(str(column) for column in prepared.columns)
+        )
         record = DatasetRecord(
             dataset_id=dataset_id,
             dataframe=prepared.copy(deep=True),
@@ -52,6 +58,7 @@ class InMemoryDatasetStore:
             removed_rows=stats.removed_rows,
             invalid_rating_rows=stats.invalid_rating_rows,
             invalid_reasons=stats.invalid_reasons,
+            content_hash=content_hash,
         )
         with self._lock:
             self._records[dataset_id] = record
@@ -101,6 +108,7 @@ class InMemoryDatasetStore:
             removed_rows=record.removed_rows,
             invalid_rating_rows=record.invalid_rating_rows,
             invalid_reasons=dict(record.invalid_reasons or {}),
+            content_hash=record.content_hash,
         )
 
 

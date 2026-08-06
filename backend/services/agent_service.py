@@ -7,6 +7,10 @@ from backend.agent.tool_calling import ControlledToolCallingAgent
 from backend.schemas.agent import AgentQueryRequest, AgentQueryResponse
 from backend.services.dataset_service import InMemoryDatasetStore
 from backend.services.insight_store import InMemoryInsightStore
+from backend.services.repositories import (
+    ANALYSIS_VERSION,
+    compute_scope_signature,
+)
 from backend.services.scope_service import ReviewScopeService
 
 
@@ -24,13 +28,21 @@ class AgentService:
 
     def query(self, request: AgentQueryRequest) -> AgentQueryResponse:
         full_dataset = request.scope == "full"
+        dataset = self._scope_service._store.get(request.dataset_id)
         dataframe = self._scope_service.get_dataframe(
             request.dataset_id,
             request.filters,
             full_dataset=full_dataset,
         )
         scope_label = "完整上传数据" if full_dataset else "当前筛选结果"
-        scope_signature = dataframe_scope_signature(dataframe)
+        content_hash = dataset.content_hash or dataframe_scope_signature(
+            dataset.dataframe
+        )
+        scope_signature = compute_scope_signature(
+            content_hash,
+            request.filters.model_dump(),
+            analysis_version=ANALYSIS_VERSION,
+        )
         matched_insights, insight_warning = self._insight_store.resolve(
             insight_id=request.insight_id,
             dataset_id=request.dataset_id,

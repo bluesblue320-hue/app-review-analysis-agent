@@ -13,6 +13,10 @@ from backend.core.exceptions import DatasetNotFoundError
 from backend.core.serialization import dataframe_to_records
 from backend.services.dataset_ingestion import parse_and_prepare_dataset
 from backend.services.dataset_service import DatasetRecord
+from backend.services.repositories import (
+    ANALYSIS_VERSION,
+    compute_content_hash,
+)
 from backend.storage.database import (
     DatasetModel,
     InsightModel,
@@ -43,6 +47,7 @@ class SqlAlchemyDatasetStore:
         expires_at = now + timedelta(days=settings.data_retention_days)
         dataset_id = f"dataset_{uuid4().hex}"
         records = dataframe_to_records(prepared)
+        content_hash = compute_content_hash(prepared, tuple(prepared.columns))
         with self._runtime.session_factory.begin() as session:
             session.add(
                 DatasetModel(
@@ -50,7 +55,12 @@ class SqlAlchemyDatasetStore:
                     filename=filename,
                     original_rows=int(len(raw)),
                     valid_rows=int(len(prepared)),
+                    removed_rows=stats.removed_rows,
+                    invalid_rating_rows=stats.invalid_rating_rows,
+                    invalid_reasons_json=dict(stats.invalid_reasons),
                     columns_json=[str(column) for column in raw.columns],
+                    content_hash=content_hash,
+                    analysis_version=ANALYSIS_VERSION,
                     created_at=now,
                     expires_at=expires_at,
                 )
@@ -151,6 +161,7 @@ class SqlAlchemyDatasetStore:
             category=_string_or_none(payload.get(CATEGORY_COLUMN)),
             risk_label=_string_or_none(payload.get(RISK_LABEL_COLUMN)),
             payload_json=payload,
+            created_at=datetime.now(UTC),
         )
 
 

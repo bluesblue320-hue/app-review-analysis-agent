@@ -35,6 +35,18 @@ class InMemoryInsightStore:
         self._records: dict[str, InsightRecord] = {}
         self._lock = RLock()
 
+    def _fingerprint_for(
+        self, *, dataset_id, scope_signature, sample_size, **kwargs
+    ) -> str:
+        from backend.services.repositories import compute_insight_fingerprint
+
+        return compute_insight_fingerprint(
+            dataset_id=dataset_id,
+            scope_signature=scope_signature,
+            sample_size=sample_size,
+            **kwargs,
+        )
+
     def create(
         self,
         *,
@@ -42,20 +54,103 @@ class InMemoryInsightStore:
         scope_signature: str,
         sample_size: int,
         insights: dict[str, Any],
+        analysis_version: str = "v1",
+        provider: str = "deepseek",
+        model_name: str = "deepseek-v4-flash",
     ) -> InsightRecord:
-        created_at = datetime.now(UTC)
-        record = InsightRecord(
-            insight_id=f"insight_{uuid4().hex}",
+        fingerprint = self._fingerprint_for(
             dataset_id=dataset_id,
             scope_signature=scope_signature,
-            sample_size=int(sample_size),
-            insights=deepcopy(insights),
-            created_at=created_at,
-            expires_at=created_at + timedelta(days=settings.data_retention_days),
+            sample_size=sample_size,
+            analysis_version=analysis_version,
+            provider=provider,
+            model_name=model_name,
         )
+        return self.upsert_fingerprint(
+            fingerprint=fingerprint,
+            dataset_id=dataset_id,
+            scope_signature=scope_signature,
+            sample_size=sample_size,
+            insights=insights,
+            analysis_version=analysis_version,
+            provider=provider,
+            model_name=model_name,
+        )
+
+    def find_by_fingerprint(self, fingerprint: str) -> InsightRecord | None:
         with self._lock:
+            for record in self._records.values():
+                stored = self._fingerprint_for(
+                    dataset_id=record.dataset_id,
+                    scope_signature=record.scope_signature,
+                    sample_size=record.sample_size,
+                )
+                if stored == fingerprint and record.expires_at > datetime.now(UTC):
+                    return self._copy_record(record)
+        return None
+
+    def upsert_fingerprint(
+        self,
+        *,
+        fingerprint: str,
+        dataset_id: str,
+        scope_signature: str,
+        sample_size: int,
+        insights: dict[str, Any],
+        analysis_version: str = "v1",
+        provider: str = "deepseek",
+        model_name: str = "deepseek-v4-flash",
+    ) -> InsightRecord:
+        with self._lock:
+            existing = self.find_by_fingerprint(fingerprint)
+            if existing is not None:
+                return existing
+            created_at = datetime.now(UTC)
+            record = InsightRecord(
+                insight_id=f"insight_{uuid4().hex}",
+                dataset_id=dataset_id,
+                scope_signature=scope_signature,
+                sample_size=int(sample_size),
+                insights=deepcopy(insights),
+                created_at=created_at,
+                expires_at=created_at + timedelta(days=settings.data_retention_days),
+            )
             self._records[record.insight_id] = record
-        return self._copy_record(record)
+            return self._copy_record(record)
+
+    def refresh_expired(
+        self,
+        *,
+        fingerprint: str,
+        insights: dict[str, Any],
+        provider: str = "deepseek",
+        model_name: str = "deepseek-v4-flash",
+    ) -> InsightRecord:
+        with self._lock:
+            target = None
+            for record in self._records.values():
+                stored = self._fingerprint_for(
+                    dataset_id=record.dataset_id,
+                    scope_signature=record.scope_signature,
+                    sample_size=record.sample_size,
+                )
+                if stored == fingerprint:
+                    target = record
+                    break
+            if target is None:
+                raise InsightNotFoundError(fingerprint)
+            now = datetime.now(UTC)
+            updated = InsightRecord(
+                insight_id=target.insight_id,
+                dataset_id=target.dataset_id,
+                scope_signature=target.scope_signature,
+                sample_size=target.sample_size,
+                insights=deepcopy(insights),
+                created_at=now,
+                expires_at=now + timedelta(days=settings.data_retention_days),
+            )
+            self._records[target.insight_id] = updated
+            return self._copy_record(updated)
 
     def get(self, insight_id: str) -> InsightRecord:
         with self._lock:

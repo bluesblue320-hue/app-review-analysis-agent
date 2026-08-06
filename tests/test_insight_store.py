@@ -22,7 +22,7 @@ def test_insight_store_uses_random_ids_and_deep_copies_records() -> None:
     )
     second = store.create(
         dataset_id="dataset_a",
-        scope_signature="scope_a",
+        scope_signature="scope_b",
         sample_size=3,
         insights=source,
     )
@@ -36,6 +36,64 @@ def test_insight_store_uses_random_ids_and_deep_copies_records() -> None:
 
     stored.insights["pain_points"][0]["name"] = "读取副本修改"
     assert store.get(first.insight_id).insights["pain_points"][0]["name"] == "账号问题"
+
+
+def test_insight_store_deduplicates_same_fingerprint() -> None:
+    store = InMemoryInsightStore()
+    source = {"summary": "重复生成"}
+
+    first = store.create(
+        dataset_id="dataset_a",
+        scope_signature="scope_a",
+        sample_size=3,
+        insights=source,
+    )
+    second = store.create(
+        dataset_id="dataset_a",
+        scope_signature="scope_a",
+        sample_size=3,
+        insights={"summary": "新内容"},
+    )
+
+    assert first.insight_id == second.insight_id
+    assert store.get(first.insight_id).insights == {"summary": "重复生成"}
+
+
+def test_insight_store_refresh_expired_keeps_same_id() -> None:
+    store = InMemoryInsightStore()
+    original = store.create(
+        dataset_id="dataset_a",
+        scope_signature="scope_a",
+        sample_size=3,
+        insights={"summary": "旧内容"},
+    )
+    from backend.services.repositories import compute_insight_fingerprint
+
+    fingerprint = compute_insight_fingerprint(
+        dataset_id="dataset_a",
+        scope_signature="scope_a",
+        sample_size=3,
+    )
+    # Force expiry by rewriting the stored record's expires_at.
+    from datetime import UTC, datetime, timedelta
+
+    from backend.services.insight_store import InsightRecord
+
+    store._records[original.insight_id] = InsightRecord(
+        insight_id=original.insight_id,
+        dataset_id=original.dataset_id,
+        scope_signature=original.scope_signature,
+        sample_size=original.sample_size,
+        insights=original.insights,
+        created_at=datetime.now(UTC) - timedelta(days=40),
+        expires_at=datetime.now(UTC) - timedelta(days=10),
+    )
+    refreshed = store.refresh_expired(
+        fingerprint=fingerprint,
+        insights={"summary": "新内容"},
+    )
+    assert refreshed.insight_id == original.insight_id
+    assert refreshed.insights == {"summary": "新内容"}
 
 
 def test_insight_store_resolves_only_matching_server_scope() -> None:

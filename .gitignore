@@ -39,3 +39,6 @@ coverage.xml
 # Generated evaluation reports (keep only the placeholder)
 evaluation/reports/*
 !evaluation/reports/.gitkeep
+data/
+*.db
+*.sqlite
