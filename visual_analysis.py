@@ -11,7 +11,6 @@ from review_fields import (
     RISK_LABEL_COLUMN,
     SENTIMENT_COLUMN,
     TIME_COLUMN_CANDIDATES,
-    TOKEN_COLUMN,
 )
 
 
@@ -77,6 +76,7 @@ def prepare_dashboard_data(df):
     prepared = prepared[prepared[CONTENT_COLUMN] != ""].copy()
     prepared[RATING_COLUMN] = pd.to_numeric(prepared[RATING_COLUMN], errors="coerce")
     prepared = prepared.dropna(subset=[RATING_COLUMN]).copy()
+    prepared = prepared[prepared[RATING_COLUMN].between(1, 5, inclusive="both")].copy()
 
     if SENTIMENT_COLUMN not in prepared.columns:
         prepared[SENTIMENT_COLUMN] = 50.0

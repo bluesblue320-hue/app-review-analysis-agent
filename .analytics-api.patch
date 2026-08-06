@@ -1,0 +1,157 @@
+diff --git a/backend/schemas/dataset.py b/backend/schemas/dataset.py
+--- a/backend/schemas/dataset.py
++++ b/backend/schemas/dataset.py
+@@ -13,1 +13,7 @@
+     created_at: datetime
++    expires_at: datetime
++
++
++class DatasetDeleteResponse(StrictModel):
++    dataset_id: str
++    deleted: bool
+diff --git a/backend/schemas/analytics.py b/backend/schemas/analytics.py
+--- a/backend/schemas/analytics.py
++++ b/backend/schemas/analytics.py
+@@ -3,0 +4,2 @@
++from typing import Literal
++
+@@ -42,0 +45,9 @@
++class ReviewSearchRequest(StrictModel):
++    dataset_id: str = Field(min_length=1, max_length=100)
++    filters: ReviewFilters = Field(default_factory=ReviewFilters)
++    view: Literal["all", "high_risk", "rating_sentiment_mismatch"] = "all"
++    offset: int = Field(default=0, ge=0)
++    limit: int = Field(default=50, ge=1, le=100)
++
++
+@@ -93,0 +105,9 @@
++class ReviewSearchResponse(StrictModel):
++    items: list[ReviewPreviewItem]
++    total: int
++    offset: int
++    limit: int
++    next_offset: int | None = None
++
++
+diff --git a/backend/services/analytics_service.py b/backend/services/analytics_service.py
+--- a/backend/services/analytics_service.py
++++ b/backend/services/analytics_service.py
+@@ -10,1 +10,7 @@
+-from backend.schemas.analytics import AnalyticsSummaryRequest, AnalyticsSummaryResponse
++from backend.schemas.analytics import (
++    AnalyticsSummaryRequest,
++    AnalyticsSummaryResponse,
++    ReviewSearchRequest,
++    ReviewSearchResponse,
++)
++from backend.services.cache_service import cache_service, summary_cache_key
+@@ -38,1 +44,2 @@
+         insight_store: InMemoryInsightStore,
++        cache=cache_service,
+     ) -> None:
+@@ -42,1 +49,2 @@
+         self._insight_store = insight_store
++        self._cache = cache
+@@ -48,5 +56,10 @@
+         record = self._store.get(request.dataset_id)
+-        filtered = self._scope_service.get_dataframe(
+-            request.dataset_id,
+-            request.filters,
++        cache_key = summary_cache_key(
++            request.dataset_id,
++            request.model_dump(mode="json"),
+         )
++        cached = self._cache.get(cache_key)
++        if cached is not None:
++            return AnalyticsSummaryResponse.model_validate(cached)
++        filtered = self._scope_service.apply_filters(record.dataframe, request.filters)
+@@ -179,1 +192,1 @@
+-        return AnalyticsSummaryResponse(
++        response = AnalyticsSummaryResponse(
+@@ -199,0 +213,35 @@
++        self._cache.set(cache_key, response.model_dump(mode="json"))
++        return response
++
++    def search_reviews(self, request: ReviewSearchRequest) -> ReviewSearchResponse:
++        record = self._store.get(request.dataset_id)
++        filtered = self._scope_service.apply_filters(record.dataframe, request.filters)
++        if request.view == "high_risk":
++            filtered = filtered[
++                filtered[RISK_LABEL_COLUMN].apply(is_high_risk_label)
++            ].sort_values([RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True])
++        elif request.view == "rating_sentiment_mismatch":
++            filtered = filtered[
++                (filtered[RATING_COLUMN] >= 4)
++                & (filtered[SENTIMENT_COLUMN] < LOW_SENTIMENT)
++            ].sort_values([SENTIMENT_COLUMN, RATING_COLUMN], ascending=[True, False])
++        total = int(len(filtered))
++        page = filtered.iloc[request.offset : request.offset + request.limit]
++        items = self._renamed_records(
++            page[[RATING_COLUMN, SENTIMENT_COLUMN, CATEGORY_COLUMN, RISK_LABEL_COLUMN, CONTENT_COLUMN]],
++            {
++                RATING_COLUMN: "rating",
++                SENTIMENT_COLUMN: "sentiment",
++                CATEGORY_COLUMN: "category",
++                RISK_LABEL_COLUMN: "risk_label",
++                CONTENT_COLUMN: "content",
++            },
++        )
++        consumed = request.offset + len(items)
++        return ReviewSearchResponse(
++            items=items,
++            total=total,
++            offset=request.offset,
++            limit=request.limit,
++            next_offset=consumed if consumed < total else None,
++        )
++
+diff --git a/backend/routers/analytics.py b/backend/routers/analytics.py
+--- a/backend/routers/analytics.py
++++ b/backend/routers/analytics.py
+@@ -5,1 +5,6 @@
+-from backend.schemas.analytics import AnalyticsSummaryRequest, AnalyticsSummaryResponse
++from backend.schemas.analytics import (
++    AnalyticsSummaryRequest,
++    AnalyticsSummaryResponse,
++    ReviewSearchRequest,
++    ReviewSearchResponse,
++)
+@@ -21,0 +27,7 @@
++
++@router.post("/reviews/search", response_model=ReviewSearchResponse)
++def search_reviews(
++    request: ReviewSearchRequest,
++) -> ReviewSearchResponse:
++    return analytics_service.search_reviews(request)
+diff --git a/backend/routers/datasets.py b/backend/routers/datasets.py
+--- a/backend/routers/datasets.py
++++ b/backend/routers/datasets.py
+@@ -6,2 +6,5 @@
+-from backend.schemas.dataset import DatasetUploadResponse
++from backend.schemas.dataset import DatasetDeleteResponse, DatasetUploadResponse
++from backend.services.cache_service import cache_service
+ from backend.services.dataset_service import dataset_store
++from backend.services.insight_store import insight_store
+@@ -28,1 +31,13 @@
+         created_at=record.created_at,
++        expires_at=record.expires_at,
+     )
++
++
++@router.delete("/{dataset_id}", response_model=DatasetDeleteResponse)
++def delete_dataset(dataset_id: str) -> DatasetDeleteResponse:
++    dataset_store.delete(dataset_id)
++    insight_store.delete_dataset(dataset_id)
++    cache_service.invalidate_dataset(dataset_id)
++    return DatasetDeleteResponse(
++        dataset_id=dataset_id,
++        deleted=True,
+     )
+diff --git a/backend/services/sqlalchemy_insight_store.py b/backend/services/sqlalchemy_insight_store.py
+--- a/backend/services/sqlalchemy_insight_store.py
++++ b/backend/services/sqlalchemy_insight_store.py
+@@ -80,0 +81,5 @@
++    def delete_dataset(self, dataset_id: str) -> None:
++        with self._runtime.session_factory.begin() as session:
++            session.execute(delete(InsightModel).where(InsightModel.dataset_id == dataset_id))
++

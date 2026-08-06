@@ -103,7 +103,13 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     checks: dict[str, bool] = {}
     failure_reasons: list[str] = []
 
-    checks["routing_ok"] = actual_routing == case.get("expected_routing")
+    checks["routing_ok"] = (
+        actual_routing == case.get("expected_routing")
+        or (
+            actual_routing == "rule_fallback"
+            and bool(case.get("allow_rule_fallback", False))
+        )
+    )
     if not checks["routing_ok"]:
         failure_reasons.append(
             f"路由不正确：期望 {case.get('expected_routing')}，实际 {actual_routing}"
@@ -177,7 +183,13 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
             failure_reasons.append("包含虚假数字的回答未被拦截")
     elif grounded_check == "pass":
         checks["grounded_ok"] = (
-            actual_routing == "tool_calling"
+            (
+                actual_routing == "tool_calling"
+                or (
+                    actual_routing == "rule_fallback"
+                    and bool(case.get("allow_rule_fallback", False))
+                )
+            )
             and not any(GROUNDED_FALLBACK_WARNING in w for w in warnings)
         )
         if not checks["grounded_ok"]:

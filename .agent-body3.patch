@@ -1,0 +1,105 @@
+diff --git a/backend/agent/tool_calling.py b/backend/agent/tool_calling.py
+--- a/backend/agent/tool_calling.py
++++ b/backend/agent/tool_calling.py
+@@ -62,1 +62,2 @@
+-    warnings: list[str] = field(default_factory=list)
++    warnings: list[str] = field(default_factory=list)
++    limitations: list[str] = field(default_factory=list)
+@@ -86,1 +87,11 @@
+-        intent = detect_intent(question)
++        intent = detect_intent(question)
++        answerability = assess_answerability(question)
++        if not answerability.supported:
++            return self._run_unsupported_inference(
++                intent=intent,
++                dataframe=dataframe,
++                scope_label=scope_label,
++                ai_insights=ai_insights,
++                answer=answerability.answer,
++                limitations=list(answerability.limitations),
++            )
+@@ -103,0 +114,41 @@
++    def _run_unsupported_inference(
++        self,
++        *,
++        intent: str,
++        dataframe: pd.DataFrame,
++        scope_label: str,
++        ai_insights: dict[str, Any] | None,
++        answer: str,
++        limitations: list[str],
++    ) -> ControlledAgentResult:
++        tool_name, arguments = FAST_RULE_TOOLS.get(
++            intent,
++            FAST_RULE_TOOLS["general_analysis"],
++        )
++        execution = self._tool_executor.execute(
++            tool_call_id="rule_1",
++            name=tool_name,
++            arguments=arguments,
++            dataframe=dataframe,
++            ai_insights=ai_insights,
++        )
++        if execution.trace.status != "success" or execution.output is None:
++            return self._fallback(
++                "当前数据是否足以回答该问题？",
++                dataframe,
++                scope_label,
++                ai_insights,
++                traces=[execution.trace],
++                warning="证据工具执行失败，已降级到原规则工作流。",
++                limitations=limitations,
++            )
++        return ControlledAgentResult(
++            intent=intent,
++            answer=self._scope_prefix(scope_label) + answer,
++            routing="rule",
++            tool_calls=[execution.trace],
++            evidence={execution.tool_call_id: execution.output},
++            tables=dict(execution.output.get("tables") or {}),
++            limitations=limitations,
++        )
++
+@@ -223,1 +275,1 @@
+-            answer = self._tool_client.synthesize(
++            synthesis = self._tool_client.synthesize(
+@@ -233,1 +285,2 @@
+-            if not self._numbers_are_grounded(answer, evidence):
++            answer, limitations = self._normalize_synthesis(synthesis)
++            if not self._numbers_are_grounded(answer, evidence):
+@@ -234,1 +287,2 @@
+-                raise ValueError("模型回答包含工具结果中不存在的数字")
++                raise ValueError("模型回答包含工具结果中不存在的数字")
++            validate_supported_claims(answer)
+@@ -253,1 +307,2 @@
+-            warnings=warnings,
++            warnings=warnings,
++            limitations=limitations,
+@@ -256,0 +311,19 @@
++    @staticmethod
++    def _normalize_synthesis(value: Any) -> tuple[str, list[str]]:
++        if isinstance(value, str):
++            answer = value.strip()
++            limitations: list[str] = []
++        elif isinstance(value, dict):
++            answer = str(value.get("answer") or "").strip()
++            raw_limitations = value.get("limitations") or []
++            if not isinstance(raw_limitations, list):
++                raise ValueError("模型 limitations 必须是数组")
++            limitations = [
++                str(item).strip() for item in raw_limitations if str(item).strip()
++            ]
++        else:
++            raise ValueError("模型回答结构异常")
++        if not answer:
++            raise ValueError("模型回答为空")
++        return answer, limitations
++
+@@ -333,1 +407,2 @@
+-        warning: str,
++        warning: str,
++        limitations: list[str] | None = None,
+@@ -352,1 +427,2 @@
+-            warnings=[*(warnings or []), warning],
++            warnings=[*(warnings or []), warning],
++            limitations=limitations or [],

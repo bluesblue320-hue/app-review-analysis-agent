@@ -13,8 +13,7 @@ class AgentQueryRequest(StrictModel):
     question: str = Field(min_length=1, max_length=1000)
     filters: ReviewFilters = Field(default_factory=ReviewFilters)
     scope: Literal["full", "filtered"] = "filtered"
-    ai_insights: dict[str, Any] | None = None
-    ai_scope_signature: str | None = Field(default=None, max_length=128)
+    insight_id: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("question")
     @classmethod
@@ -45,3 +44,4 @@ class AgentQueryResponse(StrictModel):
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     evidence: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)

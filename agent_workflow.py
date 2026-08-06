@@ -130,6 +130,7 @@ def dataframe_scope_signature(df):
 
 
 def match_ai_insights(ai_insights, stored_signature, df):
+    """Match insights for legacy/offline callers; API services resolve insight IDs."""
     if not isinstance(ai_insights, dict) or not stored_signature:
         return None
     if stored_signature != dataframe_scope_signature(df):

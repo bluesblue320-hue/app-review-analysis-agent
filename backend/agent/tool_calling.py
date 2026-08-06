@@ -11,6 +11,11 @@ import pandas as pd
 
 from agent_workflow import run_agent
 from backend.agent.deepseek_client import DeepSeekToolClient, ToolCallingError
+from backend.agent.guardrails import (
+    UnsupportedClaimError,
+    assess_answerability,
+    validate_supported_claims,
+)
 from backend.agent.tool_definitions import deepseek_tool_definitions
 from backend.agent.tool_executor import ToolCallTrace, ToolExecutionResult, ToolExecutor
 from backend.core.config import settings
@@ -33,14 +38,18 @@ COMPLEX_QUESTION_KEYWORDS = (
     "综合",
     "同时",
     "以及",
+    "并且",
     "并给",
     "对比",
+    "比较",
     "建议",
     "报告",
     "诊断",
     "归因",
     "为什么",
     "原因",
+    "优先",
+    "先修复",
 )
 NUMBER_PATTERN = re.compile(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)*(?:%)?")
 ORDERED_LIST_PREFIX = re.compile(r"(?m)^\s*\d+[.)、]\s*")
@@ -55,6 +64,7 @@ class ControlledAgentResult:
     evidence: dict[str, Any] = field(default_factory=dict)
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
 
 
 class ControlledToolCallingAgent:
@@ -79,6 +89,16 @@ class ControlledToolCallingAgent:
         ai_insights: dict[str, Any] | None = None,
     ) -> ControlledAgentResult:
         intent = detect_intent(question)
+        answerability = assess_answerability(question)
+        if not answerability.supported:
+            return self._run_unsupported_inference(
+                intent=intent,
+                dataframe=dataframe,
+                scope_label=scope_label,
+                ai_insights=ai_insights,
+                answer=answerability.answer,
+                limitations=list(answerability.limitations),
+            )
         if self._is_fast_rule_question(question, intent):
             return self._run_fast_rule(
                 question=question,
@@ -95,8 +115,55 @@ class ControlledToolCallingAgent:
             ai_insights=ai_insights,
         )
 
+    def _run_unsupported_inference(
+        self,
+        *,
+        intent: str,
+        dataframe: pd.DataFrame,
+        scope_label: str,
+        ai_insights: dict[str, Any] | None,
+        answer: str,
+        limitations: list[str],
+    ) -> ControlledAgentResult:
+        tool_name, arguments = FAST_RULE_TOOLS.get(
+            intent,
+            FAST_RULE_TOOLS["general_analysis"],
+        )
+        execution = self._tool_executor.execute(
+            tool_call_id="rule_1",
+            name=tool_name,
+            arguments=arguments,
+            dataframe=dataframe,
+            ai_insights=ai_insights,
+        )
+        if execution.trace.status != "success" or execution.output is None:
+            return self._fallback(
+                "当前数据是否足以回答该问题？",
+                dataframe,
+                scope_label,
+                ai_insights,
+                traces=[execution.trace],
+                warning="证据工具执行失败，已降级到原规则工作流。",
+                limitations=limitations,
+            )
+        return ControlledAgentResult(
+            intent=intent,
+            answer=self._scope_prefix(scope_label) + answer,
+            routing="rule",
+            tool_calls=[execution.trace],
+            evidence={execution.tool_call_id: execution.output},
+            tables=dict(execution.output.get("tables") or {}),
+            limitations=limitations,
+        )
+
     @staticmethod
     def _is_fast_rule_question(question: str, intent: str) -> bool:
+        has_complex_request = any(
+            keyword in question for keyword in COMPLEX_QUESTION_KEYWORDS
+        )
+        if has_complex_request:
+            return False
+
         matching_intents = [
             rule_intent
             for rule_intent, keywords in INTENT_RULES
@@ -108,12 +175,7 @@ class ControlledToolCallingAgent:
             has_general_metric = any(
                 keyword in question for keyword in FAST_GENERAL_KEYWORDS
             )
-            has_complex_request = any(
-                keyword in question for keyword in COMPLEX_QUESTION_KEYWORDS
-            )
-            return has_general_metric or (
-                len(question.strip()) <= 24 and not has_complex_request
-            )
+            return has_general_metric or len(question.strip()) <= 24
         return False
 
     def _run_fast_rule(
@@ -214,7 +276,7 @@ class ControlledToolCallingAgent:
         tables = self._merge_tables(successful)
         tool_messages = [self._tool_message(item) for item in executions]
         try:
-            answer = self._tool_client.synthesize(
+            synthesis = self._tool_client.synthesize(
                 question=question,
                 scope_label=scope_label,
                 assistant_message={
@@ -224,8 +286,20 @@ class ControlledToolCallingAgent:
                 tool_messages=tool_messages,
                 tools=definitions,
             )
+            answer, limitations = self._normalize_synthesis(synthesis)
             if not self._numbers_are_grounded(answer, evidence):
                 raise ValueError("模型回答包含工具结果中不存在的数字")
+            validate_supported_claims(answer)
+        except UnsupportedClaimError as exc:
+            return self._fallback(
+                question,
+                dataframe,
+                scope_label,
+                ai_insights,
+                traces=traces,
+                warnings=warnings,
+                warning=f"模型结论约束失败（{type(exc).__name__}），已降级到原规则工作流。",
+            )
         except (ToolCallingError, ValueError) as exc:
             return self._fallback(
                 question,
@@ -245,7 +319,27 @@ class ControlledToolCallingAgent:
             evidence=evidence,
             tables=tables,
             warnings=warnings,
+            limitations=limitations,
         )
+
+    @staticmethod
+    def _normalize_synthesis(value: Any) -> tuple[str, list[str]]:
+        if isinstance(value, str):
+            answer = value.strip()
+            limitations: list[str] = []
+        elif isinstance(value, dict):
+            answer = str(value.get("answer") or "").strip()
+            raw_limitations = value.get("limitations") or []
+            if not isinstance(raw_limitations, list):
+                raise ValueError("模型 limitations 必须是数组")
+            limitations = [
+                str(item).strip() for item in raw_limitations if str(item).strip()
+            ]
+        else:
+            raise ValueError("模型回答结构异常")
+        if not answer:
+            raise ValueError("模型回答为空")
+        return answer, limitations
 
     def _execute_model_call(
         self,
@@ -325,6 +419,7 @@ class ControlledToolCallingAgent:
         traces: list[ToolCallTrace] | None = None,
         warnings: list[str] | None = None,
         warning: str,
+        limitations: list[str] | None = None,
     ) -> ControlledAgentResult:
         result = run_agent(
             question=question,
@@ -344,4 +439,5 @@ class ControlledToolCallingAgent:
             tool_calls=traces or [],
             tables=tables,
             warnings=[*(warnings or []), warning],
+            limitations=limitations or [],
         )

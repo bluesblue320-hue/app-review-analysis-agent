@@ -68,18 +68,18 @@ class BackendApiClient:
         dataset_id: str,
         filters: dict[str, Any],
         *,
-        ai_insights: dict[str, Any] | None = None,
-        ai_scope_signature: str | None = None,
+        insight_id: str | None = None,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "dataset_id": dataset_id,
+            "filters": filters,
+        }
+        if insight_id is not None:
+            payload["insight_id"] = insight_id
         return self._request_json(
             "POST",
             "/api/v1/analytics/summary",
-            json={
-                "dataset_id": dataset_id,
-                "filters": filters,
-                "ai_insights": ai_insights,
-                "ai_scope_signature": ai_scope_signature,
-            },
+            json=payload,
         )
 
     def get_ai_config(self) -> dict[str, Any]:
@@ -103,20 +103,20 @@ class BackendApiClient:
         question: str,
         filters: dict[str, Any],
         scope: str,
-        ai_insights: dict[str, Any] | None = None,
-        ai_scope_signature: str | None = None,
+        insight_id: str | None = None,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "dataset_id": dataset_id,
+            "question": question,
+            "filters": filters,
+            "scope": scope,
+        }
+        if insight_id is not None:
+            payload["insight_id"] = insight_id
         return self._request_json(
             "POST",
             "/api/v1/agent/query",
-            json={
-                "dataset_id": dataset_id,
-                "question": question,
-                "filters": filters,
-                "scope": scope,
-                "ai_insights": ai_insights,
-                "ai_scope_signature": ai_scope_signature,
-            },
+            json=payload,
         )
 
     def _request_json(

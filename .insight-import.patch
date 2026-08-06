@@ -1,0 +1,6 @@
+diff --git a/backend/services/insight_store.py b/backend/services/insight_store.py
+--- a/backend/services/insight_store.py
++++ b/backend/services/insight_store.py
+@@ -10,0 +11,2 @@
++from backend.core.config import settings
++

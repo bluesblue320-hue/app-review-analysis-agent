@@ -87,6 +87,43 @@ def test_simple_question_uses_rule_tool_without_deepseek() -> None:
     assert result.tool_calls[0].status == "success"
 
 
+def test_version_comparison_with_reason_request_uses_tool_calling() -> None:
+    client = FakeToolClient(
+        [
+            _call(
+                "call_versions",
+                "compare_versions",
+                '{"versions": ["1.9.0", "2.0.0"]}',
+            )
+        ]
+    )
+    agent = ControlledToolCallingAgent(tool_client=client)
+
+    result = agent.run(
+        question="对比 1.9.0 和 2.0.0，并分析为什么 2.0.0 问题更多",
+        dataframe=_reviews(),
+        scope_label="完整上传数据",
+    )
+
+    assert result.routing == "tool_calling"
+    assert client.plan_count == 1
+    assert result.tool_calls[0].name == "compare_versions"
+
+
+def test_trend_reason_and_fix_priority_request_uses_tool_calling() -> None:
+    client = FakeToolClient([_call("call_metrics", "get_review_metrics")])
+    agent = ControlledToolCallingAgent(tool_client=client)
+
+    result = agent.run(
+        question="最近评分为什么下降，应该先修复什么",
+        dataframe=_reviews(),
+        scope_label="完整上传数据",
+    )
+
+    assert result.routing == "tool_calling"
+    assert client.plan_count == 1
+
+
 def test_short_general_question_stays_on_fast_rule_route() -> None:
     client = FakeToolClient([])
     agent = ControlledToolCallingAgent(tool_client=client)

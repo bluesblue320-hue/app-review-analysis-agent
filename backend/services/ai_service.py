@@ -5,14 +5,21 @@ from __future__ import annotations
 from agent_workflow import dataframe_scope_signature
 from ai_analysis import AiAnalysisError, analyze_reviews, load_ai_config
 from backend.core.exceptions import AiServiceError, InvalidDatasetError
+from backend.core.serialization import to_json_value
 from backend.schemas.ai import AiConfigResponse, AiInsightsRequest, AiInsightsResponse
 from backend.services.dataset_service import InMemoryDatasetStore
+from backend.services.insight_store import InMemoryInsightStore
 from backend.services.scope_service import ReviewScopeService
 
 
 class AiInsightService:
-    def __init__(self, store: InMemoryDatasetStore) -> None:
+    def __init__(
+        self,
+        store: InMemoryDatasetStore,
+        insight_store: InMemoryInsightStore,
+    ) -> None:
         self._scope_service = ReviewScopeService(store)
+        self._insight_store = insight_store
 
     @staticmethod
     def get_config() -> AiConfigResponse:
@@ -34,8 +41,19 @@ class AiInsightService:
             insights = analyze_reviews(dataframe)
         except AiAnalysisError as exc:
             raise AiServiceError(str(exc)) from exc
-        return AiInsightsResponse(
+        insights = to_json_value(insights)
+        if not isinstance(insights, dict):
+            raise AiServiceError("AI 返回结构异常，请稍后重试。")
+        scope_signature = dataframe_scope_signature(dataframe)
+        record = self._insight_store.create(
+            dataset_id=request.dataset_id,
+            scope_signature=scope_signature,
+            sample_size=len(dataframe),
             insights=insights,
+        )
+        return AiInsightsResponse(
+            insight_id=record.insight_id,
+            insights=record.insights,
             sample_size=int(len(dataframe)),
-            scope_signature=dataframe_scope_signature(dataframe),
+            scope_signature=scope_signature,
         )

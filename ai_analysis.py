@@ -245,7 +245,7 @@ def call_deepseek(messages, config, post_func=requests.post, timeout=60):
         raise AiAnalysisError(f"DeepSeek 请求失败：{exc}") from exc
 
     if response.status_code != 200:
-        raise AiAnalysisError(f"DeepSeek 返回异常状态码 {response.status_code}：{response.text}")
+        raise AiAnalysisError(f"DeepSeek 返回异常状态码 {response.status_code}。")
 
     try:
         data = response.json()

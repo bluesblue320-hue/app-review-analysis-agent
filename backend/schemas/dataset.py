@@ -11,3 +11,9 @@ class DatasetUploadResponse(StrictModel):
     valid_rows: int
     columns: list[str]
     created_at: datetime
+    expires_at: datetime
+
+
+class DatasetDeleteResponse(StrictModel):
+    dataset_id: str
+    deleted: bool

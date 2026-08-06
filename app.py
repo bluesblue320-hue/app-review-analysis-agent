@@ -35,6 +35,7 @@ def clear_dataset_state() -> None:
         "uploaded_file_signature",
         "full_summary",
         "available_categories",
+        "ai_insight_id",
         "ai_insights",
         "ai_insights_scope_signature",
         "ai_insights_sample_size",
@@ -188,12 +189,20 @@ if uploaded_file is not None:
         high_risk_only,
     )
     try:
-        summary = client.get_summary(
-            dataset_id,
-            current_filters,
-            ai_insights=st.session_state.get("ai_insights"),
-            ai_scope_signature=st.session_state.get("ai_insights_scope_signature"),
+        summary = client.get_summary(dataset_id, current_filters)
+        stored_insight_id = st.session_state.get("ai_insight_id")
+        stored_insight_signature = st.session_state.get(
+            "ai_insights_scope_signature"
         )
+        if (
+            stored_insight_id
+            and stored_insight_signature == summary.get("scope_signature")
+        ):
+            summary = client.get_summary(
+                dataset_id,
+                current_filters,
+                insight_id=stored_insight_id,
+            )
     except ApiClientError as exc:
         handle_api_error(exc, "加载看板分析")
         st.stop()
@@ -201,6 +210,8 @@ if uploaded_file is not None:
     st.success("数据处理完成！")
     if summary.get("sample_size", 0) == 0:
         st.warning("当前筛选条件下没有评论，请放宽筛选条件。")
+    for warning in summary.get("warnings", []):
+        st.caption(f"⚠️ {warning}")
 
     st.header("📊 产品健康概览")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -295,6 +306,15 @@ if uploaded_file is not None:
         ["🚨 核心槽点分析 (1-3星)", "✨ 核心爽点分析 (4-5星)", "🕵️‍♂️ 异常用户抓取"]
     )
     full_reviews = review_dataframe(full_summary.get("reviews", []))
+    full_rating_sentiment_mismatches = review_dataframe(
+        full_summary.get("rating_sentiment_mismatches", [])
+    )
+    full_rating_sentiment_mismatch_count = int(
+        full_summary.get(
+            "rating_sentiment_mismatch_count",
+            len(full_rating_sentiment_mismatches),
+        )
+    )
     full_negative_keywords = keyword_dataframe(full_summary.get("negative_keywords", []))
     full_positive_keywords = keyword_dataframe(full_summary.get("positive_keywords", []))
     with tab1:
@@ -317,17 +337,32 @@ if uploaded_file is not None:
             st.bar_chart(full_positive_keywords.set_index("关键词"))
     with tab3:
         st.subheader("情绪严重错位预警 (高星级但情绪极度负面)")
-        mismatched = full_reviews[
-            full_reviews[RISK_LABEL_COLUMN].astype(str).str.contains("高星低情绪", na=False)
-        ]
-        if mismatched.empty:
+        if full_rating_sentiment_mismatch_count == 0:
             st.write("目前未发现明显的阴阳怪气评论。")
         else:
+            st.caption(
+                f"当前完整分析范围共发现 {full_rating_sentiment_mismatch_count} 条异常评论。"
+            )
             st.dataframe(
-                mismatched[[RATING_COLUMN, SENTIMENT_COLUMN, CONTENT_COLUMN]],
+                full_rating_sentiment_mismatches[
+                    [
+                        RATING_COLUMN,
+                        SENTIMENT_COLUMN,
+                        CATEGORY_COLUMN,
+                        RISK_LABEL_COLUMN,
+                        CONTENT_COLUMN,
+                    ]
+                ],
                 use_container_width=True,
                 hide_index=True,
             )
+            if (
+                len(full_rating_sentiment_mismatches)
+                < full_rating_sentiment_mismatch_count
+            ):
+                st.caption(
+                    f"当前展示后端返回的前 {len(full_rating_sentiment_mismatches)} 条异常评论。"
+                )
 
     st.divider()
     st.header("🧠 AI 舆情洞察")
@@ -348,6 +383,7 @@ if uploaded_file is not None:
         try:
             with st.spinner("DeepSeek 正在阅读评论并生成结构化洞察..."):
                 insight_result = client.generate_ai_insights(dataset_id, current_filters)
+            st.session_state["ai_insight_id"] = insight_result.get("insight_id")
             st.session_state["ai_insights"] = insight_result.get("insights", {})
             st.session_state["ai_insights_scope_signature"] = insight_result.get(
                 "scope_signature"
@@ -449,6 +485,19 @@ if uploaded_file is not None:
         elif agent_scope == "当前筛选结果" and summary.get("sample_size", 0) == 0:
             st.warning("当前筛选结果为空，请放宽侧边栏筛选条件后再分析。")
         else:
+            requested_scope_signature = (
+                full_summary.get("scope_signature")
+                if agent_scope == "完整上传数据"
+                else summary.get("scope_signature")
+            )
+            agent_insight_id = (
+                st.session_state.get("ai_insight_id")
+                if st.session_state.get("ai_insights_scope_signature")
+                == requested_scope_signature
+                else None
+            )
+            if st.session_state.get("ai_insight_id") and agent_insight_id is None:
+                st.info("当前 Agent 分析范围与已有 AI 洞察不一致，请重新生成 AI 洞察。")
             try:
                 with st.spinner("Agent 正在调用后端分析流程..."):
                     agent_result = client.query_agent(
@@ -456,10 +505,7 @@ if uploaded_file is not None:
                         question=user_question,
                         filters=current_filters,
                         scope="full" if agent_scope == "完整上传数据" else "filtered",
-                        ai_insights=st.session_state.get("ai_insights"),
-                        ai_scope_signature=st.session_state.get(
-                            "ai_insights_scope_signature"
-                        ),
+                        insight_id=agent_insight_id,
                     )
                 st.caption(
                     f"识别意图：{agent_result.get('intent')}｜"

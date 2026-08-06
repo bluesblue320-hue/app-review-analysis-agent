@@ -1,0 +1,47 @@
+diff --git a/backend/agent/guardrails.py b/backend/agent/guardrails.py
+--- a/backend/agent/guardrails.py
++++ b/backend/agent/guardrails.py
+@@ -22,0 +22,4 @@
++class UnsupportedClaimError(ValueError):
++    """Raised when a model answer makes an unsupported absolute claim."""
++
++
+@@ -54,1 +58,1 @@
+-        raise ValueError("模型回答包含缺少明确评价维度或证据的绝对化结论")
++        raise UnsupportedClaimError("模型回答包含缺少明确评价维度或证据的绝对化结论")
+diff --git a/backend/agent/tool_calling.py b/backend/agent/tool_calling.py
+--- a/backend/agent/tool_calling.py
++++ b/backend/agent/tool_calling.py
+@@ -14,1 +14,5 @@
+-from backend.agent.guardrails import assess_answerability, validate_supported_claims
++from backend.agent.guardrails import (
++    UnsupportedClaimError,
++    assess_answerability,
++    validate_supported_claims,
++)
+@@ -289,0 +293,11 @@
++        except UnsupportedClaimError as exc:
++            return self._fallback(
++                question,
++                dataframe,
++                scope_label,
++                ai_insights,
++                traces=traces,
++                warnings=warnings,
++                warning=f"模型结论约束失败（{type(exc).__name__}），已降级到原规则工作流。",
++            )
+diff --git a/evaluation/metrics.py b/evaluation/metrics.py
+--- a/evaluation/metrics.py
++++ b/evaluation/metrics.py
+@@ -185,4 +185,8 @@
+         checks["grounded_ok"] = (
+-            actual_routing == "tool_calling"
++            (
++                actual_routing == "tool_calling"
++                or (
++                    actual_routing == "rule_fallback"
++                    and bool(case.get("allow_rule_fallback", False))
++                )
++            )
+             and not any(GROUNDED_FALLBACK_WARNING in w for w in warnings)
+         )

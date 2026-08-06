@@ -69,7 +69,7 @@ class DeepSeekToolClient:
         assistant_message: dict[str, Any],
         tool_messages: list[dict[str, Any]],
         tools: list[dict[str, object]],
-    ) -> str:
+    ) -> dict[str, Any]:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": TOOL_SYNTHESIS_SYSTEM_PROMPT},
             {
@@ -88,12 +88,39 @@ class DeepSeekToolClient:
                 "max_tokens": 2000,
                 "stream": False,
                 "thinking": {"type": "disabled"},
+                "response_format": {"type": "json_object"},
             }
         )
         content = response_message.get("content")
         if not isinstance(content, str) or not content.strip():
             raise ToolCallingResponseError("DeepSeek 未返回可用回答。")
-        return content.strip()
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ToolCallingResponseError("DeepSeek 合成回答不是有效 JSON。") from exc
+        if not isinstance(parsed, dict):
+            raise ToolCallingResponseError("DeepSeek 合成回答必须是 JSON 对象。")
+        answer = parsed.get("answer")
+        limitations = parsed.get("limitations", [])
+        evidence_call_ids = parsed.get("evidence_call_ids", [])
+        if not isinstance(answer, str) or not answer.strip():
+            raise ToolCallingResponseError("DeepSeek 合成回答缺少 answer。")
+        if not isinstance(limitations, list) or not isinstance(evidence_call_ids, list):
+            raise ToolCallingResponseError("DeepSeek 合成回答字段类型异常。")
+        executed_ids = {
+            str(message.get("tool_call_id")) for message in tool_messages
+        }
+        if not set(str(item) for item in evidence_call_ids) <= executed_ids:
+            raise ToolCallingResponseError("DeepSeek 引用了不存在的工具证据。")
+        return {
+            "answer": answer.strip(),
+            "limitations": [
+                str(item).strip()
+                for item in limitations
+                if str(item).strip()
+            ],
+            "evidence_call_ids": [str(item) for item in evidence_call_ids],
+        }
 
     def _chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         config = self._config_loader()

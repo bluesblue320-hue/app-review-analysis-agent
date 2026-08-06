@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import pandas as pd
 
-from agent_workflow import dataframe_scope_signature, match_ai_insights
+from agent_workflow import dataframe_scope_signature
 from backend.core.config import settings
 from backend.core.serialization import dataframe_to_records
-from backend.schemas.analytics import AnalyticsSummaryRequest, AnalyticsSummaryResponse
+from backend.schemas.analytics import (
+    AnalyticsSummaryRequest,
+    AnalyticsSummaryResponse,
+    ReviewSearchRequest,
+    ReviewSearchResponse,
+)
+from backend.services.cache_service import cache_service, summary_cache_key
 from backend.services.dataset_service import InMemoryDatasetStore
+from backend.services.insight_store import InMemoryInsightStore
 from backend.services.scope_service import ReviewScopeService
 from review_fields import (
     CATEGORY_COLUMN,
@@ -19,6 +26,7 @@ from review_fields import (
     TOKEN_COLUMN,
 )
 from visual_analysis import (
+    LOW_SENTIMENT,
     calculate_health_metrics,
     calculate_priority_table,
     extract_keyword_scores,
@@ -30,23 +38,36 @@ from visual_analysis import (
 
 
 class AnalyticsService:
-    def __init__(self, store: InMemoryDatasetStore) -> None:
+    def __init__(
+        self,
+        store: InMemoryDatasetStore,
+        insight_store: InMemoryInsightStore,
+        cache=cache_service,
+    ) -> None:
         self._store = store
         self._scope_service = ReviewScopeService(store)
+        self._insight_store = insight_store
+        self._cache = cache
 
     def build_summary(
         self,
         request: AnalyticsSummaryRequest,
     ) -> AnalyticsSummaryResponse:
         record = self._store.get(request.dataset_id)
-        filtered = self._scope_service.get_dataframe(
+        cache_key = summary_cache_key(
             request.dataset_id,
-            request.filters,
+            request.model_dump(mode="json"),
         )
-        current_insights = match_ai_insights(
-            request.ai_insights,
-            request.ai_scope_signature,
-            filtered,
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return AnalyticsSummaryResponse.model_validate(cached)
+        filtered = self._scope_service.apply_filters(record.dataframe, request.filters)
+        scope_signature = dataframe_scope_signature(filtered)
+        current_insights, insight_warning = self._insight_store.resolve(
+            insight_id=request.insight_id,
+            dataset_id=request.dataset_id,
+            scope_signature=scope_signature,
+            sample_size=len(filtered),
         )
 
         metrics = calculate_health_metrics(filtered)
@@ -118,6 +139,33 @@ class AnalyticsService:
                 CONTENT_COLUMN: "content",
             },
         )
+        rating_sentiment_mismatches = filtered[
+            (filtered[RATING_COLUMN] >= 4)
+            & (filtered[SENTIMENT_COLUMN] < LOW_SENTIMENT)
+        ].copy()
+        rating_sentiment_mismatch_count = int(len(rating_sentiment_mismatches))
+        rating_sentiment_mismatches = rating_sentiment_mismatches.sort_values(
+            [SENTIMENT_COLUMN, RATING_COLUMN],
+            ascending=[True, False],
+        ).head(settings.max_summary_review_rows)
+        rating_sentiment_mismatch_records = self._renamed_records(
+            rating_sentiment_mismatches[
+                [
+                    RATING_COLUMN,
+                    SENTIMENT_COLUMN,
+                    CATEGORY_COLUMN,
+                    RISK_LABEL_COLUMN,
+                    CONTENT_COLUMN,
+                ]
+            ],
+            {
+                RATING_COLUMN: "rating",
+                SENTIMENT_COLUMN: "sentiment",
+                CATEGORY_COLUMN: "category",
+                RISK_LABEL_COLUMN: "risk_label",
+                CONTENT_COLUMN: "content",
+            },
+        )
         review_records = self._renamed_records(
             filtered[
                 [
@@ -140,7 +188,7 @@ class AnalyticsService:
             record.dataframe[CATEGORY_COLUMN].dropna().astype(str).unique().tolist()
         )
 
-        return AnalyticsSummaryResponse(
+        response = AnalyticsSummaryResponse(
             sample_size=metrics["total_reviews"],
             average_rating=metrics["average_rating"],
             negative_ratio=metrics["negative_ratio"],
@@ -153,12 +201,51 @@ class AnalyticsService:
             issue_priorities=priority_records,
             trend=trend_records,
             high_risk_reviews=high_risk_records,
+            rating_sentiment_mismatches=rating_sentiment_mismatch_records,
+            rating_sentiment_mismatch_count=rating_sentiment_mismatch_count,
             reviews=review_records,
             available_categories=available_categories,
-            scope_signature=dataframe_scope_signature(filtered),
+            scope_signature=scope_signature,
+            warnings=[insight_warning] if insight_warning else [],
         )
 
     @staticmethod
+        self._cache.set(cache_key, response.model_dump(mode="json"))
+        return response
+
+    def search_reviews(self, request: ReviewSearchRequest) -> ReviewSearchResponse:
+        record = self._store.get(request.dataset_id)
+        filtered = self._scope_service.apply_filters(record.dataframe, request.filters)
+        if request.view == "high_risk":
+            filtered = filtered[
+                filtered[RISK_LABEL_COLUMN].apply(is_high_risk_label)
+            ].sort_values([RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True])
+        elif request.view == "rating_sentiment_mismatch":
+            filtered = filtered[
+                (filtered[RATING_COLUMN] >= 4)
+                & (filtered[SENTIMENT_COLUMN] < LOW_SENTIMENT)
+            ].sort_values([SENTIMENT_COLUMN, RATING_COLUMN], ascending=[True, False])
+        total = int(len(filtered))
+        page = filtered.iloc[request.offset : request.offset + request.limit]
+        items = self._renamed_records(
+            page[[RATING_COLUMN, SENTIMENT_COLUMN, CATEGORY_COLUMN, RISK_LABEL_COLUMN, CONTENT_COLUMN]],
+            {
+                RATING_COLUMN: "rating",
+                SENTIMENT_COLUMN: "sentiment",
+                CATEGORY_COLUMN: "category",
+                RISK_LABEL_COLUMN: "risk_label",
+                CONTENT_COLUMN: "content",
+            },
+        )
+        consumed = request.offset + len(items)
+        return ReviewSearchResponse(
+            items=items,
+            total=total,
+            offset=request.offset,
+            limit=request.limit,
+            next_offset=consumed if consumed < total else None,
+        )
+
     def _renamed_records(
         dataframe: pd.DataFrame,
         columns: dict[str, str],

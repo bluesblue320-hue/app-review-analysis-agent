@@ -45,10 +45,43 @@ class BackendApiClientTests(unittest.TestCase):
             json={
                 "dataset_id": "dataset_1",
                 "filters": filters,
-                "ai_insights": None,
-                "ai_scope_signature": None,
             },
         )
+
+    def test_summary_sends_only_server_insight_id(self):
+        client, session = self.make_client()
+        session.request.return_value = self.response(payload={"sample_size": 3})
+
+        client.get_summary("dataset_1", {}, insight_id="insight_1")
+
+        payload = session.request.call_args.kwargs["json"]
+        self.assertEqual(
+            payload,
+            {
+                "dataset_id": "dataset_1",
+                "filters": {},
+                "insight_id": "insight_1",
+            },
+        )
+        self.assertNotIn("ai_insights", payload)
+        self.assertNotIn("ai_scope_signature", payload)
+
+    def test_agent_sends_only_server_insight_id(self):
+        client, session = self.make_client()
+        session.request.return_value = self.response(payload={"answer": "ok"})
+
+        client.query_agent(
+            dataset_id="dataset_1",
+            question="差评问题",
+            filters={},
+            scope="full",
+            insight_id="insight_1",
+        )
+
+        payload = session.request.call_args.kwargs["json"]
+        self.assertEqual(payload["insight_id"], "insight_1")
+        self.assertNotIn("ai_insights", payload)
+        self.assertNotIn("ai_scope_signature", payload)
 
     def test_upload_uses_multipart_file(self):
         client, session = self.make_client()

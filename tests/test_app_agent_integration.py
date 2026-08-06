@@ -33,8 +33,25 @@ class AppApiIntegrationTests(unittest.TestCase):
 
     def test_ai_insights_are_generated_by_backend(self):
         self.assertIn("client.generate_ai_insights(", self.source)
+        self.assertIn('st.session_state["ai_insight_id"]', self.source)
         self.assertIn('st.session_state["ai_insights_scope_signature"]', self.source)
         self.assertNotIn("analyze_reviews(", self.source)
+
+    def test_backend_requests_send_only_insight_id(self):
+        self.assertIn("insight_id=stored_insight_id", self.source)
+        self.assertIn("insight_id=agent_insight_id", self.source)
+        self.assertNotIn('ai_insights=st.session_state.get("ai_insights")', self.source)
+        self.assertNotIn("ai_scope_signature=", self.source)
+
+    def test_dataset_switch_clears_server_insight_reference(self):
+        clear_state = self.source[self.source.index("def clear_dataset_state") :]
+        clear_state = clear_state[: clear_state.index("def handle_api_error")]
+        self.assertIn('"ai_insight_id"', clear_state)
+
+    def test_rating_sentiment_mismatch_tab_uses_dedicated_backend_fields(self):
+        self.assertIn('full_summary.get("rating_sentiment_mismatches", [])', self.source)
+        self.assertIn('"rating_sentiment_mismatch_count"', self.source)
+        self.assertNotIn('.str.contains("高星低情绪"', self.source)
 
     def test_handles_api_errors_without_stopping_complete_scope_agent(self):
         self.assertIn("except ApiClientError as exc:", self.source)
