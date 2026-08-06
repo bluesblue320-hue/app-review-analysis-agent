@@ -5,9 +5,25 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, event
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    event,
+)
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
 
 
 class Base(DeclarativeBase):
@@ -24,11 +40,11 @@ class DatasetModel(Base):
     columns_json: Mapped[list[str]] = mapped_column(JSON)
     created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), index=True)
     expires_at: Mapped[Any] = mapped_column(DateTime(timezone=True), index=True)
-    reviews: Mapped[list["ReviewModel"]] = relationship(
+    reviews: Mapped[list[ReviewModel]] = relationship(
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    insights: Mapped[list["InsightModel"]] = relationship(
+    insights: Mapped[list[InsightModel]] = relationship(
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -72,7 +88,9 @@ class InsightModel(Base):
 
 class DatabaseRuntime:
     def __init__(self, database_url: str) -> None:
-        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        connect_args = (
+            {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        )
         self.engine = create_engine(
             database_url,
             future=True,

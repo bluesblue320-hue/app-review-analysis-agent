@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-
 UNSUPPORTED_INFERENCE_PATTERNS = (
     re.compile(r"(下个月|未来|以后|会不会|是否会).*(上升|下降|增长|减少|变好|变差)"),
     re.compile(r"(造成|导致|引起|因为).*(用户流失|流失多少|服务器接口|收入|营收)"),
@@ -33,7 +32,9 @@ class AnswerabilityDecision:
 def assess_answerability(question: str) -> AnswerabilityDecision:
     """Reject causal, predictive and commercial estimates absent from review data."""
     normalized = str(question or "").strip()
-    if not any(pattern.search(normalized) for pattern in UNSUPPORTED_INFERENCE_PATTERNS):
+    if not any(
+        pattern.search(normalized) for pattern in UNSUPPORTED_INFERENCE_PATTERNS
+    ):
         return AnswerabilityDecision(supported=True)
 
     limitation = (

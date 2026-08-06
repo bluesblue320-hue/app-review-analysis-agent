@@ -9,7 +9,11 @@ class VisualAnalysisTests(unittest.TestCase):
     def make_reviews(self):
         return pd.DataFrame(
             [
-                {"评分": 1, "内容": "无故封号，申诉没人处理，客服也找不到", "情绪指数": 8},
+                {
+                    "评分": 1,
+                    "内容": "无故封号，申诉没人处理，客服也找不到",
+                    "情绪指数": 8,
+                },
                 {"评分": 1, "内容": "账号被封，人工客服一直没有回复", "情绪指数": 12},
                 {"评分": 2, "内容": "审核太严格，笔记莫名违规", "情绪指数": 25},
                 {"评分": 3, "内容": "广告太多，推荐质量下降", "情绪指数": 45},
@@ -85,10 +89,14 @@ class VisualAnalysisTests(unittest.TestCase):
             ]
         }
 
-        priority = visual_analysis.calculate_priority_table(prepared, ai_insights=insights, top_n=3)
+        priority = visual_analysis.calculate_priority_table(
+            prepared, ai_insights=insights, top_n=3
+        )
 
         self.assertEqual(priority.iloc[0]["问题类型"], "账号类")
-        self.assertGreater(priority.iloc[0]["优先级分数"], priority.iloc[1]["优先级分数"])
+        self.assertGreater(
+            priority.iloc[0]["优先级分数"], priority.iloc[1]["优先级分数"]
+        )
         self.assertEqual(priority.iloc[0]["严重程度"], "high")
         self.assertIn("封号", priority.iloc[0]["代表评论"])
 
@@ -104,11 +112,15 @@ class VisualAnalysisTests(unittest.TestCase):
             ]
         }
 
-        priority = visual_analysis.calculate_priority_table(prepared, ai_insights=insights, top_n=5)
+        priority = visual_analysis.calculate_priority_table(
+            prepared, ai_insights=insights, top_n=5
+        )
         experience = priority[priority["问题类型"] == "体验类"].iloc[0]
 
         self.assertGreaterEqual(experience["AI严重度"], 100)
-        self.assertEqual(experience["AI建议"], "降低信息流广告密度，优先检查推荐页体验。")
+        self.assertEqual(
+            experience["AI建议"], "降低信息流广告密度，优先检查推荐页体验。"
+        )
 
     def test_calculate_priority_table_ignores_malformed_ai_insights(self):
         prepared = visual_analysis.prepare_dashboard_data(self.make_reviews())

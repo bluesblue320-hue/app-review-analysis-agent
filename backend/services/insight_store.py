@@ -4,18 +4,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Any
 from uuid import uuid4
+
 from backend.core.config import settings
 
-
-
 INSIGHT_NOT_FOUND_WARNING = "指定的 AI 洞察不存在，未使用 AI 洞察。"
-INSIGHT_SCOPE_MISMATCH_WARNING = (
-    "当前数据范围与指定 AI 洞察不一致，旧洞察未被使用。"
-)
+INSIGHT_SCOPE_MISMATCH_WARNING = "当前数据范围与指定 AI 洞察不一致，旧洞察未被使用。"
 
 
 class InsightNotFoundError(LookupError):
@@ -46,7 +43,7 @@ class InMemoryInsightStore:
         sample_size: int,
         insights: dict[str, Any],
     ) -> InsightRecord:
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         record = InsightRecord(
             insight_id=f"insight_{uuid4().hex}",
             dataset_id=dataset_id,
@@ -63,7 +60,7 @@ class InMemoryInsightStore:
     def get(self, insight_id: str) -> InsightRecord:
         with self._lock:
             record = self._records.get(insight_id)
-            if record is None or record.expires_at <= datetime.now(timezone.utc):
+            if record is None or record.expires_at <= datetime.now(UTC):
                 self._records.pop(insight_id, None)
                 raise InsightNotFoundError(insight_id)
             return self._copy_record(record)
@@ -91,23 +88,26 @@ class InMemoryInsightStore:
         ):
             return None, INSIGHT_SCOPE_MISMATCH_WARNING
         return record.insights, None
+
     def delete_dataset(self, dataset_id: str) -> None:
         with self._lock:
             keys = [
-                key for key, value in self._records.items()
+                key
+                for key, value in self._records.items()
                 if value.dataset_id == dataset_id
             ]
             for key in keys:
                 self._records.pop(key, None)
 
     def cleanup_expired(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._lock:
-            keys = [key for key, value in self._records.items() if value.expires_at <= now]
+            keys = [
+                key for key, value in self._records.items() if value.expires_at <= now
+            ]
             for key in keys:
                 self._records.pop(key, None)
             return len(keys)
-
 
     def clear(self) -> None:
         with self._lock:

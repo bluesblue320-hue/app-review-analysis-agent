@@ -7,7 +7,6 @@ from typing import Any
 
 import requests
 
-
 DEFAULT_BACKEND_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 

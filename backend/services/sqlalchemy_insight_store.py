@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import delete, select
@@ -25,7 +25,7 @@ class SqlAlchemyInsightStore:
         sample_size: int,
         insights: dict,
     ) -> InsightRecord:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._runtime.session_factory.begin() as session:
             dataset = session.get(DatasetModel, dataset_id)
             if dataset is None:
@@ -43,7 +43,7 @@ class SqlAlchemyInsightStore:
         return self._record(model)
 
     def get(self, insight_id: str) -> InsightRecord:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._runtime.session_factory.begin() as session:
             model = session.get(InsightModel, insight_id)
             if model is None or _as_utc(model.expires_at) <= now:
@@ -85,10 +85,12 @@ class SqlAlchemyInsightStore:
 
     def delete_dataset(self, dataset_id: str) -> None:
         with self._runtime.session_factory.begin() as session:
-            session.execute(delete(InsightModel).where(InsightModel.dataset_id == dataset_id))
+            session.execute(
+                delete(InsightModel).where(InsightModel.dataset_id == dataset_id)
+            )
 
     def cleanup_expired(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._runtime.session_factory.begin() as session:
             expired_ids = session.scalars(
                 select(InsightModel.insight_id).where(InsightModel.expires_at <= now)
@@ -113,5 +115,5 @@ class SqlAlchemyInsightStore:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

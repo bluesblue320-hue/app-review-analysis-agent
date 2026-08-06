@@ -17,7 +17,6 @@ from review_fields import (
     SENTIMENT_COLUMN,
 )
 
-
 st.set_page_config(page_title="竞品舆情分析罗盘", page_icon="🧭", layout="wide")
 st.title("🧭 竞品舆情自动化分析罗盘")
 st.markdown("上传应用商店评论数据，一键提取核心槽点与情感健康度。")
@@ -126,7 +125,10 @@ if uploaded_file is not None:
     upload_signature = hashlib.sha256(uploaded_content).hexdigest()
     dataset_id = st.session_state.get("dataset_id")
 
-    if st.session_state.get("uploaded_file_signature") != upload_signature or not dataset_id:
+    if (
+        st.session_state.get("uploaded_file_signature") != upload_signature
+        or not dataset_id
+    ):
         try:
             with st.spinner("正在上传数据并等待后端完成清洗与情感计算..."):
                 upload_result = client.upload_dataset(
@@ -178,7 +180,9 @@ if uploaded_file is not None:
             default=category_options,
             key=f"selected_categories_{dataset_id}",
         )
-        keyword_query = st.text_input("关键词搜索", placeholder="例如：封号、广告、客服")
+        keyword_query = st.text_input(
+            "关键词搜索", placeholder="例如：封号、广告、客服"
+        )
         high_risk_only = st.checkbox("只看高风险评论")
 
     current_filters = filters_payload(
@@ -191,12 +195,9 @@ if uploaded_file is not None:
     try:
         summary = client.get_summary(dataset_id, current_filters)
         stored_insight_id = st.session_state.get("ai_insight_id")
-        stored_insight_signature = st.session_state.get(
-            "ai_insights_scope_signature"
-        )
-        if (
-            stored_insight_id
-            and stored_insight_signature == summary.get("scope_signature")
+        stored_insight_signature = st.session_state.get("ai_insights_scope_signature")
+        if stored_insight_id and stored_insight_signature == summary.get(
+            "scope_signature"
         ):
             summary = client.get_summary(
                 dataset_id,
@@ -220,7 +221,11 @@ if uploaded_file is not None:
     col3.metric("差评占比", f"{summary.get('negative_ratio', 0.0)}%")
     average_sentiment = summary.get("average_sentiment", 0.0)
     sentiment_delta = (
-        "健康" if average_sentiment > 60 else "需警惕" if average_sentiment > 40 else "高风险"
+        "健康"
+        if average_sentiment > 60
+        else "需警惕"
+        if average_sentiment > 40
+        else "高风险"
     )
     col4.metric("平均情绪", f"{average_sentiment} 分", sentiment_delta)
     col5.metric("高风险评论", summary.get("high_risk_count", 0))
@@ -234,7 +239,9 @@ if uploaded_file is not None:
     if priority_df.empty:
         st.info("当前筛选范围内没有足够数据生成问题优先级。")
     else:
-        st.bar_chart(priority_df[[CATEGORY_COLUMN, "优先级分数"]].set_index(CATEGORY_COLUMN))
+        st.bar_chart(
+            priority_df[[CATEGORY_COLUMN, "优先级分数"]].set_index(CATEGORY_COLUMN)
+        )
         st.dataframe(priority_df, use_container_width=True, hide_index=True)
 
     st.subheader("🔎 评分与情绪诊断")
@@ -315,8 +322,12 @@ if uploaded_file is not None:
             len(full_rating_sentiment_mismatches),
         )
     )
-    full_negative_keywords = keyword_dataframe(full_summary.get("negative_keywords", []))
-    full_positive_keywords = keyword_dataframe(full_summary.get("positive_keywords", []))
+    full_negative_keywords = keyword_dataframe(
+        full_summary.get("negative_keywords", [])
+    )
+    full_positive_keywords = keyword_dataframe(
+        full_summary.get("positive_keywords", [])
+    )
     with tab1:
         st.subheader("导致用户流失的核心因素")
         if not full_negative_keywords.empty:
@@ -382,13 +393,17 @@ if uploaded_file is not None:
     ):
         try:
             with st.spinner("DeepSeek 正在阅读评论并生成结构化洞察..."):
-                insight_result = client.generate_ai_insights(dataset_id, current_filters)
+                insight_result = client.generate_ai_insights(
+                    dataset_id, current_filters
+                )
             st.session_state["ai_insight_id"] = insight_result.get("insight_id")
             st.session_state["ai_insights"] = insight_result.get("insights", {})
             st.session_state["ai_insights_scope_signature"] = insight_result.get(
                 "scope_signature"
             )
-            st.session_state["ai_insights_sample_size"] = insight_result.get("sample_size")
+            st.session_state["ai_insights_sample_size"] = insight_result.get(
+                "sample_size"
+            )
             st.rerun()
         except ApiClientError as exc:
             handle_api_error(exc, "生成 AI 洞察")
@@ -439,7 +454,9 @@ if uploaded_file is not None:
                 st.write(f"- {driver}")
         if insights.get("high_risk_reviews"):
             st.subheader("高风险评论")
-            st.dataframe(pd.DataFrame(insights["high_risk_reviews"]), use_container_width=True)
+            st.dataframe(
+                pd.DataFrame(insights["high_risk_reviews"]), use_container_width=True
+            )
         if insights.get("recommendations"):
             st.subheader("产品与运营建议")
             for recommendation in insights["recommendations"]:
@@ -537,4 +554,6 @@ if uploaded_file is not None:
             except ApiClientError as exc:
                 handle_api_error(exc, "Agent 分析")
 else:
-    st.info("👈 请在左侧上传你在上一步爬取的 `xiaohongshu_reviews.csv` 文件以生成分析报告。")
+    st.info(
+        "👈 请在左侧上传你在上一步爬取的 `xiaohongshu_reviews.csv` 文件以生成分析报告。"
+    )

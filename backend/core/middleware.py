@@ -14,7 +14,6 @@ from fastapi.responses import JSONResponse
 from backend.core.config import settings
 from backend.core.security import bearer_token_is_valid
 
-
 logger = logging.getLogger("backend.requests")
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 PUBLIC_PATHS = {

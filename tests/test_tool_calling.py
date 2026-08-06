@@ -285,3 +285,125 @@ def test_deepseek_client_converts_mocked_requests_timeout() -> None:
 
     with pytest.raises(ToolCallingTimeout):
         client.plan(question="复杂问题", scope_label="完整上传数据", tools=[])
+
+
+class DictAnswerToolClient(FakeToolClient):
+    """Returns a dict answer so the orchestrator can parse evidence_call_ids."""
+
+    def __init__(
+        self,
+        tool_calls: list[dict[str, Any]],
+        answer: str = "已根据工具结果完成分析。",
+        evidence_call_ids: list[str] | None = None,
+    ) -> None:
+        super().__init__(tool_calls, answer)
+        self.evidence_call_ids = evidence_call_ids or []
+
+    def synthesize(self, **kwargs: Any) -> dict[str, Any]:
+        self.synthesis_messages = kwargs["tool_messages"]
+        return {
+            "answer": self.answer,
+            "limitations": [],
+            "evidence_call_ids": self.evidence_call_ids,
+        }
+
+
+def test_rule_route_reports_rule_1_evidence_id() -> None:
+    client = FakeToolClient([])
+    agent = ControlledToolCallingAgent(tool_client=client)
+    result = agent.run(
+        question="平均评分是多少？",
+        dataframe=_reviews(),
+        scope_label="当前筛选数据",
+    )
+    assert result.routing == "rule"
+    assert result.evidence_call_ids == ["rule_1"]
+
+
+def test_tool_calling_keeps_successful_call_ids() -> None:
+    client = DictAnswerToolClient(
+        [_call("call_a", "get_review_metrics")],
+        answer="当前平均评分为 3.0。",
+        evidence_call_ids=["call_a"],
+    )
+    agent = ControlledToolCallingAgent(tool_client=client)
+    result = agent.run(
+        question="综合对比当前各版本指标和趋势？",
+        dataframe=_reviews(),
+        scope_label="当前筛选数据",
+    )
+    assert result.routing == "tool_calling"
+    assert result.evidence_call_ids == ["call_a"]
+
+
+def test_forged_evidence_id_triggers_rule_fallback() -> None:
+    client = DictAnswerToolClient(
+        [_call("call_a", "get_review_metrics")],
+        answer="当前平均评分为 3.0。",
+        evidence_call_ids=["call_a", "call_missing"],
+    )
+    agent = ControlledToolCallingAgent(tool_client=client)
+    result = agent.run(
+        question="综合对比当前各版本指标和趋势？",
+        dataframe=_reviews(),
+        scope_label="当前筛选数据",
+    )
+    assert result.routing == "rule_fallback"
+    assert "校验失败" in result.warnings[0]
+    assert "call_missing" not in result.evidence_call_ids
+
+
+def test_failed_tool_call_id_is_not_accepted_as_evidence() -> None:
+    client = DictAnswerToolClient(
+        [_call("call_a", "analyze_negative_reviews", '{"top_n": 999}')],
+        answer="差评关键词权重很高。",
+        evidence_call_ids=["call_a"],
+    )
+    agent = ControlledToolCallingAgent(tool_client=client)
+    result = agent.run(
+        question="综合对比当前各版本指标和趋势？",
+        dataframe=_reviews(),
+        scope_label="当前筛选数据",
+    )
+    # call_a failed validation -> model answer validation fails -> fallback
+    assert result.routing == "rule_fallback"
+    assert result.evidence_call_ids == []
+
+
+def test_model_messages_are_pii_redacted_before_send() -> None:
+    reviews = prepare_dashboard_data(
+        pd.DataFrame(
+            [
+                {
+                    "评分": 1,
+                    "内容": "客服电话 13812345678 一直打不通",
+                    "版本": "2.0.0",
+                    "时间": "2026-07-01",
+                },
+            ]
+        )
+    )
+    client = DictAnswerToolClient(
+        [
+            _call(
+                "call_a",
+                "retrieve_representative_reviews",
+                '{"review_type": "negative", "limit": 5}',
+            )
+        ],
+        answer="代表评论已返回。",
+        evidence_call_ids=["call_a"],
+    )
+    agent = ControlledToolCallingAgent(tool_client=client)
+    result = agent.run(
+        question="综合对比当前各版本指标和趋势？",
+        dataframe=reviews,
+        scope_label="当前筛选数据",
+    )
+    assert result.routing == "tool_calling"
+    assert client.synthesis_messages, "tool messages must be captured"
+    joined = "".join(
+        str(message.get("content") or "") for message in client.synthesis_messages
+    )
+    assert "13812345678" not in joined
+    assert "[PHONE]" in joined

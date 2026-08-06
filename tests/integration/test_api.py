@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
 
 from backend.main import app
 from backend.services.dataset_service import dataset_store
@@ -79,6 +80,9 @@ def test_csv_upload_converts_ratings_and_removes_invalid_rows(client: TestClient
     assert result["dataset_id"].startswith("dataset_")
     assert result["original_rows"] == 4
     assert result["valid_rows"] == 2
+    assert result["removed_rows"] == 2
+    assert result["invalid_rating_rows"] == 1
+    assert result["invalid_reasons"] == {"invalid_rating": 1, "empty_content": 1}
     assert result["columns"] == ["评分", "内容", "版本"]
     assert result["created_at"].endswith("Z")
 
@@ -94,6 +98,36 @@ def test_upload_excludes_out_of_range_ratings_and_full_agent_uses_valid_rows(
         {"评分": "not-a-rating", "内容": "无法转换的评分"},
         {"评分": 3, "内容": "   "},
     ]
+    dataset = _upload(client, rows)
+    summary_response = client.post(
+        "/api/v1/analytics/summary",
+        json={"dataset_id": dataset["dataset_id"], "filters": {}},
+    )
+    agent_response = client.post(
+        "/api/v1/agent/query",
+        json={
+            "dataset_id": dataset["dataset_id"],
+            "question": "平均评分是多少？",
+            "filters": {},
+            "scope": "full",
+        },
+    )
+
+    assert dataset["original_rows"] == 6
+    assert dataset["valid_rows"] == 2
+    assert dataset["removed_rows"] == 4
+    assert dataset["invalid_rating_rows"] == 3
+    assert dataset["invalid_reasons"] == {"invalid_rating": 3, "empty_content": 1}
+    assert summary_response.status_code == 200, summary_response.text
+    summary = summary_response.json()
+    assert summary["sample_size"] == dataset["valid_rows"]
+    assert {
+        item["rating"]
+        for item in summary["rating_distribution"]
+        if item["review_count"] > 0
+    } == {1, 5}
+    assert agent_response.status_code == 200, agent_response.text
+    assert agent_response.json()["sample_size"] == dataset["valid_rows"]
 
 
 def _fake_insights(name: str, suggestion: str) -> dict[str, object]:
@@ -127,34 +161,6 @@ def _generate_insight(
         )
     assert response.status_code == 200, response.text
     return response.json()
-
-    dataset = _upload(client, rows)
-    summary_response = client.post(
-        "/api/v1/analytics/summary",
-        json={"dataset_id": dataset["dataset_id"], "filters": {}},
-    )
-    agent_response = client.post(
-        "/api/v1/agent/query",
-        json={
-            "dataset_id": dataset["dataset_id"],
-            "question": "平均评分是多少？",
-            "filters": {},
-            "scope": "full",
-        },
-    )
-
-    assert dataset["original_rows"] == 6
-    assert dataset["valid_rows"] == 2
-    assert summary_response.status_code == 200, summary_response.text
-    summary = summary_response.json()
-    assert summary["sample_size"] == dataset["valid_rows"]
-    assert {
-        item["rating"]
-        for item in summary["rating_distribution"]
-        if item["review_count"] > 0
-    } == {1, 5}
-    assert agent_response.status_code == 200, agent_response.text
-    assert agent_response.json()["sample_size"] == dataset["valid_rows"]
 
 
 def test_upload_rejects_missing_required_column(client: TestClient):
@@ -218,10 +224,7 @@ def test_summary_finds_rating_sentiment_mismatch_after_review_preview_limit(
     client: TestClient,
 ):
     mismatch_content = "第 101 条异常评论"
-    rows = [
-        {"评分": 5, "内容": f"普通评论 {index}"}
-        for index in range(1, 101)
-    ]
+    rows = [{"评分": 5, "内容": f"普通评论 {index}"} for index in range(1, 101)]
     rows.append({"评分": 5, "内容": mismatch_content})
 
     def fake_sentiment(content: object) -> float:
@@ -321,9 +324,9 @@ def test_summary_validates_filter_ranges(client: TestClient):
     assert response.json()["error"]["code"] == "validation_error"
 
 
-def test_ai_config_does_not_expose_api_key(client: TestClient, caplog):
-    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "sk-secret"}):
-        response = client.get("/api/v1/ai/config")
+def test_ai_config_does_not_expose_api_key(client: TestClient, caplog, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-secret")
+    response = client.get("/api/v1/ai/config")
 
     assert response.status_code == 200
     assert response.json()["configured"] is True
@@ -344,7 +347,9 @@ def test_ai_insights_use_server_dataset_scope(client: TestClient):
         "report_copy": "",
     }
 
-    with patch("backend.services.ai_service.analyze_reviews", return_value=fake_insights):
+    with patch(
+        "backend.services.ai_service.analyze_reviews", return_value=fake_insights
+    ):
         response = client.post(
             "/api/v1/ai/insights",
             json={
@@ -568,20 +573,20 @@ def test_agent_reuses_insight_only_by_matching_server_insight_id(client: TestCli
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["warnings"] == []
-    assert suggestion in {
-        item["AI建议"] for item in result["tables"]["问题优先级"]
-    }
+    assert suggestion in {item["AI建议"] for item in result["tables"]["问题优先级"]}
 
 
-def test_ai_insight_response_and_logs_do_not_expose_api_key(client: TestClient, caplog):
+def test_ai_insight_response_and_logs_do_not_expose_api_key(
+    client: TestClient,
+    caplog,
+    monkeypatch,
+):
     dataset = _upload(client, _sample_rows())
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-secret-insight")
 
-    with (
-        patch.dict("os.environ", {"DEEPSEEK_API_KEY": "sk-secret-insight"}),
-        patch(
-            "backend.services.ai_service.analyze_reviews",
-            return_value=_fake_insights("账号问题", "安全建议"),
-        ),
+    with patch(
+        "backend.services.ai_service.analyze_reviews",
+        return_value=_fake_insights("账号问题", "安全建议"),
     ):
         response = client.post(
             "/api/v1/ai/insights",
@@ -635,3 +640,94 @@ def test_simple_agent_query_uses_whitelisted_rule_tool(client: TestClient):
     assert result["tool_calls"][0]["name"] == "compare_versions"
     assert result["tool_calls"][0]["status"] == "success"
     assert result["evidence"]
+    assert result["evidence_call_ids"] == ["rule_1"]
+
+
+def test_agent_response_includes_evidence_call_ids_for_rule_fallback(
+    client: TestClient,
+):
+    dataset = _upload(client, _sample_rows())
+    response = client.post(
+        "/api/v1/agent/query",
+        json={
+            "dataset_id": dataset["dataset_id"],
+            "question": "闪退一定是服务器接口导致的吗？",
+            "filters": {},
+            "scope": "full",
+        },
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["routing"] == "rule"
+    assert result["limitations"], "unanswerable question must carry limitations"
+    assert result["evidence_call_ids"] == ["rule_1"]
+
+
+def test_dataset_delete_removes_dataset_and_returns_deleted(client: TestClient):
+    dataset = _upload(client, _sample_rows())
+    response = client.delete(f"/api/v1/datasets/{dataset['dataset_id']}")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "dataset_id": dataset["dataset_id"],
+        "deleted": True,
+    }
+    # The deleted dataset is no longer visible.
+    missing = client.post(
+        "/api/v1/analytics/summary",
+        json={"dataset_id": dataset["dataset_id"], "filters": {}},
+    )
+    assert missing.status_code == 404, missing.text
+    assert missing.json()["error"]["code"] == "dataset_not_found"
+
+
+def test_dataset_delete_unknown_id_returns_not_found(client: TestClient):
+    response = client.delete("/api/v1/datasets/dataset_missing")
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "dataset_not_found"
+
+
+def test_missing_bearer_token_returns_401(client: TestClient):
+    with patch("backend.core.middleware.settings") as mock_settings:
+        mock_settings.access_token = "secret-token"
+        mock_settings.api_prefix = "/api/v1"
+        response = client.get("/api/v1/health")
+        assert response.status_code == 200
+        protected = client.post(
+            "/api/v1/analytics/summary",
+            json={"dataset_id": "dataset_x", "filters": {}},
+        )
+        assert protected.status_code == 401, protected.text
+        assert protected.json()["error"]["code"] == "unauthorized"
+        assert protected.headers.get("X-Request-ID")
+
+
+def test_wrong_bearer_token_returns_401(client: TestClient):
+    with patch("backend.core.middleware.settings") as mock_settings:
+        mock_settings.access_token = "secret-token"
+        mock_settings.api_prefix = "/api/v1"
+        response = client.get(
+            "/api/v1/health",
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        # /health is public: it must not require a token
+        assert response.status_code == 200
+        protected = client.post(
+            "/api/v1/analytics/summary",
+            json={"dataset_id": "dataset_x", "filters": {}},
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        assert protected.status_code == 401, protected.text
+
+
+def test_correct_bearer_token_is_accepted(client: TestClient):
+    with patch("backend.core.middleware.settings") as mock_settings:
+        mock_settings.access_token = "secret-token"
+        mock_settings.api_prefix = "/api/v1"
+        response = client.post(
+            "/api/v1/analytics/summary",
+            json={"dataset_id": "dataset_missing", "filters": {}},
+            headers={"Authorization": "Bearer secret-token"},
+        )
+        # token accepted: request proceeds to business logic (dataset not found)
+        assert response.status_code == 404, response.text
+        assert response.json()["error"]["code"] == "dataset_not_found"

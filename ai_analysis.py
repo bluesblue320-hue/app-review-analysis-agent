@@ -16,7 +16,6 @@ from review_fields import (
     VERSION_COLUMN,
 )
 
-
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
@@ -45,7 +44,9 @@ def load_env_file(path=".env"):
 
 def load_ai_config():
     load_env_file()
-    provider = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
+    provider = (
+        os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
+    )
     model = os.getenv("AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     return {
         "provider": provider,
@@ -103,7 +104,9 @@ def build_review_packet(df, max_reviews=100):
         raise AiAnalysisError(f"CSV 缺少必要列：{missing}")
 
     clean_df = df.copy()
-    clean_df[CONTENT_COLUMN] = clean_df[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    clean_df[CONTENT_COLUMN] = (
+        clean_df[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    )
     clean_df = clean_df[clean_df[CONTENT_COLUMN] != ""].copy()
     clean_df[RATING_COLUMN] = pd.to_numeric(clean_df[RATING_COLUMN], errors="coerce")
     clean_df = clean_df.dropna(subset=[RATING_COLUMN])
@@ -116,8 +119,12 @@ def build_review_packet(df, max_reviews=100):
     positive_limit = max(1, review_limit // 4)
     mismatch_limit = max(0, review_limit - negative_limit - positive_limit)
 
-    negative_pool = clean_df.sort_values([RATING_COLUMN], ascending=True).head(negative_limit)
-    positive_pool = clean_df.sort_values([RATING_COLUMN], ascending=False).head(positive_limit)
+    negative_pool = clean_df.sort_values([RATING_COLUMN], ascending=True).head(
+        negative_limit
+    )
+    positive_pool = clean_df.sort_values([RATING_COLUMN], ascending=False).head(
+        positive_limit
+    )
     pools = [negative_pool, positive_pool]
 
     if mismatch_limit and SENTIMENT_COLUMN in clean_df.columns:
@@ -240,7 +247,9 @@ def call_deepseek(messages, config, post_func=requests.post, timeout=60):
     }
 
     try:
-        response = post_func(config["base_url"], headers=headers, json=payload, timeout=timeout)
+        response = post_func(
+            config["base_url"], headers=headers, json=payload, timeout=timeout
+        )
     except requests.RequestException as exc:
         raise AiAnalysisError(f"DeepSeek 请求失败：{exc}") from exc
 

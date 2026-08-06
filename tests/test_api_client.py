@@ -85,7 +85,9 @@ class BackendApiClientTests(unittest.TestCase):
 
     def test_upload_uses_multipart_file(self):
         client, session = self.make_client()
-        session.request.return_value = self.response(payload={"dataset_id": "dataset_1"})
+        session.request.return_value = self.response(
+            payload={"dataset_id": "dataset_1"}
+        )
 
         result = client.upload_dataset("reviews.csv", b"csv-content")
 

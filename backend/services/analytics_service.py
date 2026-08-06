@@ -227,7 +227,15 @@ class AnalyticsService:
         total = int(len(filtered))
         page = filtered.iloc[request.offset : request.offset + request.limit]
         items = self._renamed_records(
-            page[[RATING_COLUMN, SENTIMENT_COLUMN, CATEGORY_COLUMN, RISK_LABEL_COLUMN, CONTENT_COLUMN]],
+            page[
+                [
+                    RATING_COLUMN,
+                    SENTIMENT_COLUMN,
+                    CATEGORY_COLUMN,
+                    RISK_LABEL_COLUMN,
+                    CONTENT_COLUMN,
+                ]
+            ],
             {
                 RATING_COLUMN: "rating",
                 SENTIMENT_COLUMN: "sentiment",

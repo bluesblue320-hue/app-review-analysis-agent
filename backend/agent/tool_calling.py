@@ -19,9 +19,9 @@ from backend.agent.guardrails import (
 from backend.agent.tool_definitions import deepseek_tool_definitions
 from backend.agent.tool_executor import ToolCallTrace, ToolExecutionResult, ToolExecutor
 from backend.core.config import settings
+from backend.core.privacy import redact_text
 from backend.core.serialization import dataframe_to_records
 from intent_router import GENERAL_INTENT, INTENT_RULES, detect_intent
-
 
 RoutingMode = Literal["rule", "tool_calling", "rule_fallback"]
 FAST_RULE_TOOLS = {
@@ -65,6 +65,7 @@ class ControlledAgentResult:
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+    evidence_call_ids: list[str] = field(default_factory=list)
 
 
 class ControlledToolCallingAgent:
@@ -154,6 +155,7 @@ class ControlledToolCallingAgent:
             evidence={execution.tool_call_id: execution.output},
             tables=dict(execution.output.get("tables") or {}),
             limitations=limitations,
+            evidence_call_ids=[execution.tool_call_id],
         )
 
     @staticmethod
@@ -212,6 +214,7 @@ class ControlledToolCallingAgent:
             tool_calls=[execution.trace],
             evidence={execution.tool_call_id: output},
             tables=dict(output.get("tables") or {}),
+            evidence_call_ids=[execution.tool_call_id],
         )
 
     def _run_tool_calling(
@@ -286,10 +289,16 @@ class ControlledToolCallingAgent:
                 tool_messages=tool_messages,
                 tools=definitions,
             )
-            answer, limitations = self._normalize_synthesis(synthesis)
+            answer, limitations, claimed_evidence_ids = self._normalize_synthesis(
+                synthesis
+            )
             if not self._numbers_are_grounded(answer, evidence):
                 raise ValueError("模型回答包含工具结果中不存在的数字")
             validate_supported_claims(answer)
+            evidence_call_ids = self._validate_evidence_ids(
+                claimed_evidence_ids,
+                successful,
+            )
         except UnsupportedClaimError as exc:
             return self._fallback(
                 question,
@@ -299,6 +308,7 @@ class ControlledToolCallingAgent:
                 traces=traces,
                 warnings=warnings,
                 warning=f"模型结论约束失败（{type(exc).__name__}），已降级到原规则工作流。",
+                evidence_call_ids=[item.tool_call_id for item in successful],
             )
         except (ToolCallingError, ValueError) as exc:
             return self._fallback(
@@ -309,6 +319,7 @@ class ControlledToolCallingAgent:
                 traces=traces,
                 warnings=warnings,
                 warning=f"模型回答校验失败（{type(exc).__name__}），已降级到原规则工作流。",
+                evidence_call_ids=[item.tool_call_id for item in successful],
             )
 
         return ControlledAgentResult(
@@ -320,13 +331,38 @@ class ControlledToolCallingAgent:
             tables=tables,
             warnings=warnings,
             limitations=limitations,
+            evidence_call_ids=evidence_call_ids,
         )
 
     @staticmethod
-    def _normalize_synthesis(value: Any) -> tuple[str, list[str]]:
+    def _validate_evidence_ids(
+        claimed_evidence_ids: list[str],
+        successful: list[ToolExecutionResult],
+    ) -> list[str]:
+        """Reject evidence IDs that do not reference a successful tool call.
+
+        Evidence may only reference tool calls whose status is ``success`` in
+        this request. A missing or non-successful ID makes the model result
+        fail validation and enter rule fallback; forged IDs are never kept.
+        """
+        successful_ids = {item.tool_call_id for item in successful}
+        invalid_ids = [
+            str(item)
+            for item in claimed_evidence_ids
+            if str(item) not in successful_ids
+        ]
+        if invalid_ids:
+            raise ValueError("模型引用了不存在的工具证据：" + ", ".join(invalid_ids))
+        return [str(item) for item in claimed_evidence_ids]
+
+    @staticmethod
+    def _normalize_synthesis(
+        value: Any,
+    ) -> tuple[str, list[str], list[str]]:
         if isinstance(value, str):
             answer = value.strip()
             limitations: list[str] = []
+            evidence_call_ids: list[str] = []
         elif isinstance(value, dict):
             answer = str(value.get("answer") or "").strip()
             raw_limitations = value.get("limitations") or []
@@ -335,11 +371,15 @@ class ControlledToolCallingAgent:
             limitations = [
                 str(item).strip() for item in raw_limitations if str(item).strip()
             ]
+            raw_evidence_ids = value.get("evidence_call_ids") or []
+            if not isinstance(raw_evidence_ids, list):
+                raise ValueError("模型 evidence_call_ids 必须是数组")
+            evidence_call_ids = [str(item) for item in raw_evidence_ids]
         else:
             raise ValueError("模型回答结构异常")
         if not answer:
             raise ValueError("模型回答为空")
-        return answer, limitations
+        return answer, limitations, evidence_call_ids
 
     def _execute_model_call(
         self,
@@ -374,10 +414,15 @@ class ControlledToolCallingAgent:
                 "status": execution.trace.status,
                 "error": execution.trace.error,
             }
+        redacted_content = _redact_recursive(content)
         return {
             "role": "tool",
             "tool_call_id": execution.tool_call_id,
-            "content": json.dumps(content, ensure_ascii=False, allow_nan=False),
+            "content": json.dumps(
+                redacted_content,
+                ensure_ascii=False,
+                allow_nan=False,
+            ),
         }
 
     @staticmethod
@@ -420,6 +465,7 @@ class ControlledToolCallingAgent:
         warnings: list[str] | None = None,
         warning: str,
         limitations: list[str] | None = None,
+        evidence_call_ids: list[str] | None = None,
     ) -> ControlledAgentResult:
         result = run_agent(
             question=question,
@@ -440,4 +486,18 @@ class ControlledToolCallingAgent:
             tables=tables,
             warnings=[*(warnings or []), warning],
             limitations=limitations or [],
+            evidence_call_ids=evidence_call_ids or [],
         )
+
+
+def _redact_recursive(value: Any) -> Any:
+    """Redact PII from every string inside a JSON-serializable structure."""
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, dict):
+        return {key: _redact_recursive(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_recursive(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_recursive(item) for item in value]
+    return value

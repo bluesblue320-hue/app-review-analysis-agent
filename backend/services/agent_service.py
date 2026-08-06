@@ -54,6 +54,7 @@ class AgentService:
             routing=result.routing,
             tool_calls=[trace.model_dump() for trace in result.tool_calls],
             evidence=result.evidence,
+            evidence_call_ids=result.evidence_call_ids,
             warnings=[
                 *([insight_warning] if insight_warning else []),
                 *result.warnings,

@@ -25,11 +25,10 @@ import pandas as pd
 from backend.agent.deepseek_client import DeepSeekToolClient
 from backend.agent.tool_calling import ControlledToolCallingAgent
 from backend.agent.tool_definitions import ALLOWED_TOOL_NAMES
-from review_preprocessing import preprocess_reviews
-from visual_analysis import prepare_dashboard_data
-
 from evaluation.metrics import common_failure_reasons, compute_metrics, evaluate_case
 from evaluation.mock_tool_client import MockToolClient
+from review_preprocessing import preprocess_reviews
+from visual_analysis import prepare_dashboard_data
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_QUESTIONS_PATH = PACKAGE_DIR / "agent_questions.json"
@@ -63,7 +62,9 @@ def load_questions(path: str | Path) -> list[dict[str, Any]]:
             expected_all = expected_tools
         routing = str(case.get("expected_routing") or "rule")
         if routing not in VALID_ROUTINGS:
-            raise ValueError(f"案例 {case.get('id')} 的 expected_routing 无效：{routing}")
+            raise ValueError(
+                f"案例 {case.get('id')} 的 expected_routing 无效：{routing}"
+            )
         normalized.append(
             {
                 "id": str(case["id"]),
@@ -75,9 +76,7 @@ def load_questions(path: str | Path) -> list[dict[str, Any]]:
                 "forbidden_tools": list(case.get("forbidden_tools") or []),
                 "expected_arguments": dict(case.get("expected_arguments") or {}),
                 "allow_rule_fallback": bool(case.get("allow_rule_fallback", False)),
-                "expects_illegal_tool": bool(
-                    case.get("expects_illegal_tool", False)
-                ),
+                "expects_illegal_tool": bool(case.get("expects_illegal_tool", False)),
                 "grounded_number_check": case.get("grounded_number_check"),
                 "answer_expectations": dict(case.get("answer_expectations") or {}),
                 "mock_plan": dict(case.get("mock_plan") or {}),
@@ -101,14 +100,14 @@ def validate_questions(cases: list[dict[str, Any]]) -> None:
         )
         for name in expected_names:
             if name not in ALLOWED_TOOL_NAMES:
-                raise ValueError(
-                    f"案例 {case['id']} 的预期工具不在白名单中：{name}"
-                )
+                raise ValueError(f"案例 {case['id']} 的预期工具不在白名单中：{name}")
         mock_names = [
             str(item.get("name") or "")
             for item in (case["mock_plan"].get("tool_calls") or [])
         ]
-        simulates_illegal_tool = case["mock_plan"].get("behavior") == "illegal_tool" or any(
+        simulates_illegal_tool = case["mock_plan"].get(
+            "behavior"
+        ) == "illegal_tool" or any(
             name not in ALLOWED_TOOL_NAMES for name in mock_names
         )
         if simulates_illegal_tool and not case["expects_illegal_tool"]:
@@ -150,9 +149,7 @@ def build_tool_client(mode: str, case: dict[str, Any] | None = None) -> Any:
 
         config = load_ai_config()
         if config.get("provider") != "deepseek":
-            raise RuntimeError(
-                "Live 模式要求 AI_PROVIDER=deepseek，当前配置不满足。"
-            )
+            raise RuntimeError("Live 模式要求 AI_PROVIDER=deepseek，当前配置不满足。")
         if not str(config.get("api_key") or "").strip():
             raise RuntimeError(
                 "Live 模式缺少 DEEPSEEK_API_KEY，无法调用真实模型；"
@@ -347,7 +344,15 @@ def build_report_md(
         value = metrics.get(name)
         lines.append(f"| {label} | {value if value is not None else 'N/A'} |")
 
-    lines.extend(["", "## 按问题类别表现", "", "| 类别 | 通过 | 总案例 | 通过率 | 失败案例 |", "| --- | --- | --- | --- | --- |"])
+    lines.extend(
+        [
+            "",
+            "## 按问题类别表现",
+            "",
+            "| 类别 | 通过 | 总案例 | 通过率 | 失败案例 |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
     for category, entry in sorted(summary["per_category"].items()):
         total = entry["total"]
         passed = entry["passed"]
@@ -441,7 +446,9 @@ def run_main(argv: list[str] | None = None) -> int:
             model_name = str(load_ai_config().get("model") or "unknown")
         except RuntimeError as exc:
             print(f"Live 模式准备失败：{exc}", file=sys.stderr)
-            print("请配置 DEEPSEEK_API_KEY 后重试，或使用 --mode mock。", file=sys.stderr)
+            print(
+                "请配置 DEEPSEEK_API_KEY 后重试，或使用 --mode mock。", file=sys.stderr
+            )
             return 2
 
     try:

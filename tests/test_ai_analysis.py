@@ -77,7 +77,9 @@ class AiAnalysisTests(unittest.TestCase):
         calls = []
 
         def fake_post(url, headers, json, timeout):
-            calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
+            calls.append(
+                {"url": url, "headers": headers, "json": json, "timeout": timeout}
+            )
             return FakeResponse(payload=payload)
 
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=True):

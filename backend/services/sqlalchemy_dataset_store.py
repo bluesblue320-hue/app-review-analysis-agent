@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pandas as pd
@@ -38,8 +38,8 @@ class SqlAlchemyDatasetStore:
         self._runtime = get_database_runtime(database_url or settings.database_url)
 
     def create(self, filename: str, content: bytes) -> DatasetRecord:
-        raw, prepared = parse_and_prepare_dataset(filename, content, settings)
-        now = datetime.now(timezone.utc)
+        raw, prepared, stats = parse_and_prepare_dataset(filename, content, settings)
+        now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.data_retention_days)
         dataset_id = f"dataset_{uuid4().hex}"
         records = dataframe_to_records(prepared)
@@ -67,10 +67,13 @@ class SqlAlchemyDatasetStore:
             columns=tuple(str(column) for column in raw.columns),
             created_at=now,
             expires_at=expires_at,
+            removed_rows=stats.removed_rows,
+            invalid_rating_rows=stats.invalid_rating_rows,
+            invalid_reasons=dict(stats.invalid_reasons),
         )
 
     def get(self, dataset_id: str) -> DatasetRecord:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._runtime.session_factory.begin() as session:
             model = session.get(DatasetModel, dataset_id)
             if model is None or _as_utc(model.expires_at) <= now:
@@ -101,7 +104,7 @@ class SqlAlchemyDatasetStore:
             session.delete(model)
 
     def cleanup_expired(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._runtime.session_factory.begin() as session:
             expired_ids = session.scalars(
                 select(DatasetModel.dataset_id).where(DatasetModel.expires_at <= now)
@@ -128,7 +131,11 @@ class SqlAlchemyDatasetStore:
         payload: dict[str, object],
     ) -> ReviewModel:
         review_time = next(
-            (payload.get(column) for column in TIME_COLUMN_CANDIDATES if payload.get(column)),
+            (
+                payload.get(column)
+                for column in TIME_COLUMN_CANDIDATES
+                if payload.get(column)
+            ),
             None,
         )
         return ReviewModel(
@@ -149,8 +156,8 @@ class SqlAlchemyDatasetStore:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _float_or_none(value):

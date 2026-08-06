@@ -5,7 +5,6 @@ from fastapi import APIRouter
 from backend.core.config import settings
 from backend.schemas.common import HealthResponse
 
-
 router = APIRouter(tags=["health"])
 
 

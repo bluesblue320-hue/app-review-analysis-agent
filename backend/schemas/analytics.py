@@ -1,8 +1,8 @@
 """Pydantic schemas for deterministic review analytics."""
 
 from __future__ import annotations
-from typing import Literal
 
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -21,7 +21,11 @@ class ReviewFilters(StrictModel):
     @field_validator("categories")
     @classmethod
     def normalize_categories(cls, categories: list[str]) -> list[str]:
-        return list(dict.fromkeys(category.strip() for category in categories if category.strip()))
+        return list(
+            dict.fromkeys(
+                category.strip() for category in categories if category.strip()
+            )
+        )
 
     @field_validator("keyword")
     @classmethod
@@ -29,7 +33,7 @@ class ReviewFilters(StrictModel):
         return keyword.strip()
 
     @model_validator(mode="after")
-    def validate_ranges(self) -> "ReviewFilters":
+    def validate_ranges(self) -> ReviewFilters:
         if self.rating_min > self.rating_max:
             raise ValueError("rating_min 不能大于 rating_max")
         if self.sentiment_min > self.sentiment_max:
@@ -42,13 +46,13 @@ class AnalyticsSummaryRequest(StrictModel):
     filters: ReviewFilters = Field(default_factory=ReviewFilters)
     insight_id: str | None = Field(default=None, min_length=1, max_length=100)
 
+
 class ReviewSearchRequest(StrictModel):
     dataset_id: str = Field(min_length=1, max_length=100)
     filters: ReviewFilters = Field(default_factory=ReviewFilters)
     view: Literal["all", "high_risk", "rating_sentiment_mismatch"] = "all"
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=50, ge=1, le=100)
-
 
 
 class RatingDistributionItem(StrictModel):

@@ -17,9 +17,13 @@ class ReviewPreprocessingTests(unittest.TestCase):
     def test_shared_field_constants_remain_available_from_visual_analysis(self):
         self.assertEqual(visual_analysis.RATING_COLUMN, review_fields.RATING_COLUMN)
         self.assertEqual(visual_analysis.CONTENT_COLUMN, review_fields.CONTENT_COLUMN)
-        self.assertEqual(visual_analysis.SENTIMENT_COLUMN, review_fields.SENTIMENT_COLUMN)
+        self.assertEqual(
+            visual_analysis.SENTIMENT_COLUMN, review_fields.SENTIMENT_COLUMN
+        )
         self.assertEqual(visual_analysis.CATEGORY_COLUMN, review_fields.CATEGORY_COLUMN)
-        self.assertEqual(visual_analysis.RISK_LABEL_COLUMN, review_fields.RISK_LABEL_COLUMN)
+        self.assertEqual(
+            visual_analysis.RISK_LABEL_COLUMN, review_fields.RISK_LABEL_COLUMN
+        )
 
     def test_clean_and_tokenize_preserves_existing_text_policy(self):
         result = review_preprocessing.clean_and_tokenize(

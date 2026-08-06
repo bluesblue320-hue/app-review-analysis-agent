@@ -11,9 +11,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.core.config import settings
 from backend.core.exceptions import AppError
+from backend.core.lifecycle import application_lifespan
+from backend.core.middleware import request_context_middleware
 from backend.routers import agent, ai, analytics, datasets, health
 from backend.schemas.common import ErrorDetail, ErrorResponse
-
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,9 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="App Review Analysis Agent API",
         version="1.0.0",
+        lifespan=application_lifespan,
     )
+    application.middleware("http")(request_context_middleware)
     application.include_router(health.router, prefix=settings.api_prefix)
     application.include_router(datasets.router, prefix=settings.api_prefix)
     application.include_router(analytics.router, prefix=settings.api_prefix)

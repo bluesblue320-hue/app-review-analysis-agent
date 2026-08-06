@@ -47,10 +47,14 @@ def load_settings() -> Settings:
     storage_backend = os.getenv("STORAGE_BACKEND", default_storage).strip().lower()
     if storage_backend not in {"memory", "database"}:
         raise ValueError("STORAGE_BACKEND must be memory or database")
-    raw_enable_docs = os.getenv(
-        "ENABLE_DOCS",
-        "false" if app_env == "production" else "true",
-    ).strip().lower()
+    raw_enable_docs = (
+        os.getenv(
+            "ENABLE_DOCS",
+            "false" if app_env == "production" else "true",
+        )
+        .strip()
+        .lower()
+    )
     if raw_enable_docs not in {"true", "false", "1", "0", "yes", "no"}:
         raise ValueError("ENABLE_DOCS must be a boolean")
     return Settings(
@@ -64,9 +68,7 @@ def load_settings() -> Settings:
         max_upload_size_mb=_positive_int_from_env("MAX_UPLOAD_SIZE_MB", 10),
         max_dataset_rows=_positive_int_from_env("MAX_DATASET_ROWS", 10_000),
         max_dataset_columns=_positive_int_from_env("MAX_DATASET_COLUMNS", 50),
-        max_review_text_chars=_positive_int_from_env(
-            "MAX_REVIEW_TEXT_CHARS", 5_000
-        ),
+        max_review_text_chars=_positive_int_from_env("MAX_REVIEW_TEXT_CHARS", 5_000),
         max_summary_review_rows=_positive_int_from_env(
             "MAX_SUMMARY_REVIEW_ROWS",
             100,

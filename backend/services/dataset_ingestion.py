@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
@@ -12,15 +13,30 @@ from backend.core.exceptions import (
     UnsupportedFileTypeError,
     UploadTooLargeError,
 )
-from review_fields import CONTENT_COLUMN, REQUIRED_REVIEW_COLUMNS
+from review_fields import CONTENT_COLUMN, RATING_COLUMN, REQUIRED_REVIEW_COLUMNS
 from review_preprocessing import preprocess_reviews
 from visual_analysis import prepare_dashboard_data
 
-
 SUPPORTED_ENCODINGS = ("utf-8-sig", "utf-8", "gb18030")
 
+INVALID_RATING_REASON = "invalid_rating"
+EMPTY_CONTENT_REASON = "empty_content"
 
-def parse_and_prepare_dataset(filename: str, content: bytes, settings):
+
+@dataclass(frozen=True)
+class IngestionStats:
+    original_rows: int = 0
+    valid_rows: int = 0
+    removed_rows: int = 0
+    invalid_rating_rows: int = 0
+    invalid_reasons: dict[str, int] = field(default_factory=dict)
+
+
+def parse_and_prepare_dataset(
+    filename: str,
+    content: bytes,
+    settings,
+) -> tuple[pd.DataFrame, pd.DataFrame, IngestionStats]:
     if Path(filename or "").suffix.lower() != ".csv":
         raise UnsupportedFileTypeError()
     if len(content) > settings.max_upload_size_mb * 1024 * 1024:
@@ -39,7 +55,7 @@ def parse_and_prepare_dataset(filename: str, content: bytes, settings):
             parse_errors.append(f"{encoding}: {exc}")
             continue
         raw_dataframe = candidate
-        if REQUIRED_REVIEW_COLUMNS <= set(candidate.columns):
+        if set(candidate.columns) >= REQUIRED_REVIEW_COLUMNS:
             break
 
     if raw_dataframe is None:
@@ -70,4 +86,43 @@ def parse_and_prepare_dataset(filename: str, content: bytes, settings):
 
     processed = preprocess_reviews(raw_dataframe)
     prepared = prepare_dashboard_data(processed)
-    return raw_dataframe, prepared
+    stats = _build_ingestion_stats(raw_dataframe, prepared)
+    return raw_dataframe, prepared, stats
+
+
+def _build_ingestion_stats(
+    raw_dataframe: pd.DataFrame,
+    prepared: pd.DataFrame,
+) -> IngestionStats:
+    """Count rows dropped during strict rating validation and content checks.
+
+    Ratings that cannot be parsed or fall outside 1..5 are counted as
+    ``invalid_rating``; blank content rows are counted as ``empty_content``.
+    """
+    reasons: dict[str, int] = {}
+
+    raw_content = raw_dataframe[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    empty_count = int((raw_content == "").sum())
+    if empty_count:
+        reasons[EMPTY_CONTENT_REASON] = empty_count
+
+    numeric_ratings = pd.to_numeric(
+        raw_dataframe[RATING_COLUMN],
+        errors="coerce",
+    )
+    invalid_rating_count = int(
+        numeric_ratings.isna().sum()
+        + ((~numeric_ratings.isna()) & (~numeric_ratings.between(1, 5))).sum()
+    )
+    if invalid_rating_count:
+        reasons[INVALID_RATING_REASON] = invalid_rating_count
+
+    original_rows = int(len(raw_dataframe))
+    valid_rows = int(len(prepared))
+    return IngestionStats(
+        original_rows=original_rows,
+        valid_rows=valid_rows,
+        removed_rows=original_rows - valid_rows,
+        invalid_rating_rows=invalid_rating_count,
+        invalid_reasons=reasons,
+    )

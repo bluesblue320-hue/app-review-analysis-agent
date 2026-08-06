@@ -8,7 +8,6 @@ from backend.services.cache_service import cache_service
 from backend.services.dataset_service import dataset_store
 from backend.services.insight_store import insight_store
 
-
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
@@ -25,6 +24,9 @@ async def upload_dataset(file: UploadFile = File(...)) -> DatasetUploadResponse:
         dataset_id=record.dataset_id,
         original_rows=record.original_rows,
         valid_rows=record.valid_rows,
+        removed_rows=record.removed_rows,
+        invalid_rating_rows=record.invalid_rating_rows,
+        invalid_reasons=dict(record.invalid_reasons or {}),
         columns=list(record.columns),
         created_at=record.created_at,
         expires_at=record.expires_at,

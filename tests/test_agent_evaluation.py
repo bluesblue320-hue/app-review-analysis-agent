@@ -5,14 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pandas as pd
 import pytest
-
-from backend.agent.tool_calling import ControlledToolCallingAgent
-from backend.agent.tool_definitions import ALLOWED_TOOL_NAMES
 
 import evaluation.evaluate_agent as evaluation_module
 import evaluation.metrics as metrics_module
+from backend.agent.tool_calling import ControlledToolCallingAgent
+from backend.agent.tool_definitions import ALLOWED_TOOL_NAMES
 from evaluation.evaluate_agent import (
     build_tool_client,
     evaluate,
@@ -140,17 +138,21 @@ def test_argument_comparison_logic():
         {"versions": ["1.9.0", "2.0.0"]},
         {"versions": ["2.0.0", "1.9.0"]},
     ) == (True, {"versions": True})
-    assert metrics_module.compare_arguments(
-        {"limit": 5}, {"limit": 5}
-    ) == (True, {"limit": True})
-    assert metrics_module.compare_arguments(
-        {"limit": 5}, {"limit": 10}
-    ) == (False, {"limit": False})
+    assert metrics_module.compare_arguments({"limit": 5}, {"limit": 5}) == (
+        True,
+        {"limit": True},
+    )
+    assert metrics_module.compare_arguments({"limit": 5}, {"limit": 10}) == (
+        False,
+        {"limit": False},
+    )
 
 
 def test_parameter_extraction_passes(evaluation_results):
     summary, outcomes = evaluation_results
-    param_cases = [item for item in outcomes if item["category"] == "parameter_extraction"]
+    param_cases = [
+        item for item in outcomes if item["category"] == "parameter_extraction"
+    ]
     assert len(param_cases) == 5
     assert all(item["passed"] for item in param_cases)
     assert summary["metrics"]["argument_accuracy"] == 1.0
@@ -259,9 +261,7 @@ def test_expects_illegal_tool_flag_validation():
             ]
         )
     with pytest.raises(ValueError, match="expects_illegal_tool"):
-        validate_questions(
-            [{**base, "mock_plan": {"behavior": "illegal_tool"}}]
-        )
+        validate_questions([{**base, "mock_plan": {"behavior": "illegal_tool"}}])
     with pytest.raises(ValueError, match="expects_illegal_tool"):
         validate_questions(
             [
@@ -379,9 +379,7 @@ def test_report_files_generated(tmp_path, evaluation_results):
 def test_summary_json_parseable(evaluation_results, tmp_path):
     summary, outcomes = evaluation_results
     report_dir = write_reports(tmp_path, summary, outcomes)
-    loaded = json.loads(
-        (report_dir / "summary.json").read_text(encoding="utf-8")
-    )
+    loaded = json.loads((report_dir / "summary.json").read_text(encoding="utf-8"))
     assert loaded["total_cases"] == 46
     assert "metrics" in loaded
     assert "NaN" not in (report_dir / "summary.json").read_text(encoding="utf-8")
@@ -408,7 +406,9 @@ def test_cases_jsonl_lines_are_valid_json(evaluation_results, tmp_path):
 
 
 def test_case_id_filter(dataframe, questions):
-    summary, outcomes = evaluate(questions, dataframe, mode="mock", case_id="routing_001")
+    summary, outcomes = evaluate(
+        questions, dataframe, mode="mock", case_id="routing_001"
+    )
     assert summary["total_cases"] == 1
     assert outcomes[0]["id"] == "routing_001"
 
@@ -426,37 +426,39 @@ def test_category_filter(dataframe, questions):
 def test_fail_under_passes_for_mock_baseline(evaluation_results, tmp_path):
     summary, _ = evaluation_results
     assert fail_under_violations(summary) == []
-    assert run_main(
-        [
-            "--mode",
-            "mock",
-            "--fail-under",
-            "--output-dir",
-            str(tmp_path),
-        ]
-    ) == 0
+    assert (
+        run_main(
+            [
+                "--mode",
+                "mock",
+                "--fail-under",
+                "--output-dir",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
     written = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert written["fail_under"]["passed"] is True
 
 
-def test_fail_under_returns_nonzero_below_threshold(
-    monkeypatch, tmp_path
-):
+def test_fail_under_returns_nonzero_below_threshold(monkeypatch, tmp_path):
     def broken_violations(summary):
         return ["routing_accuracy: 0.5 < 0.9"]
 
-    monkeypatch.setattr(
-        evaluation_module, "fail_under_violations", broken_violations
+    monkeypatch.setattr(evaluation_module, "fail_under_violations", broken_violations)
+    assert (
+        run_main(
+            [
+                "--mode",
+                "mock",
+                "--fail-under",
+                "--output-dir",
+                str(tmp_path),
+            ]
+        )
+        == 1
     )
-    assert run_main(
-        [
-            "--mode",
-            "mock",
-            "--fail-under",
-            "--output-dir",
-            str(tmp_path),
-        ]
-    ) == 1
 
 
 def test_default_mode_is_mock(tmp_path):

@@ -9,7 +9,6 @@ from typing import Any
 
 from backend.core.config import settings
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -44,17 +43,25 @@ class RedisCache:
 
     def set(self, key: str, value: dict[str, Any]) -> None:
         try:
-            self._client.setex(key, self._ttl_seconds, json.dumps(value, ensure_ascii=False))
+            self._client.setex(
+                key, self._ttl_seconds, json.dumps(value, ensure_ascii=False)
+            )
         except Exception as exc:
-            logger.warning("Redis cache write failed: error_type=%s", type(exc).__name__)
+            logger.warning(
+                "Redis cache write failed: error_type=%s", type(exc).__name__
+            )
 
     def invalidate_dataset(self, dataset_id: str) -> None:
         try:
-            keys = list(self._client.scan_iter(match=f"summary:{dataset_id}:*", count=100))
+            keys = list(
+                self._client.scan_iter(match=f"summary:{dataset_id}:*", count=100)
+            )
             if keys:
                 self._client.delete(*keys)
         except Exception as exc:
-            logger.warning("Redis cache invalidation failed: error_type=%s", type(exc).__name__)
+            logger.warning(
+                "Redis cache invalidation failed: error_type=%s", type(exc).__name__
+            )
 
     def ready(self) -> bool:
         try:
@@ -64,7 +71,9 @@ class RedisCache:
 
 
 def summary_cache_key(dataset_id: str, payload: dict[str, Any]) -> str:
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"summary:{dataset_id}:{digest}"
 

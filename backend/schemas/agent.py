@@ -43,5 +43,6 @@ class AgentQueryResponse(StrictModel):
     routing: Literal["rule", "tool_calling", "rule_fallback"]
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     evidence: dict[str, Any] = Field(default_factory=dict)
+    evidence_call_ids: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)

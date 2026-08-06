@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import requests
 
@@ -13,6 +14,7 @@ from backend.agent.prompts import (
     build_planner_messages,
 )
 from backend.core.config import settings
+from backend.core.privacy import redact_text
 
 
 class ToolCallingError(Exception):
@@ -38,10 +40,15 @@ class DeepSeekToolClient:
         post_func: Callable[..., Any] = requests.post,
         config_loader: Callable[[], dict[str, Any]] = load_ai_config,
         timeout_seconds: int | None = None,
+        redactor: Callable[[object], str] | None = None,
     ) -> None:
         self._post = post_func
         self._config_loader = config_loader
         self._timeout_seconds = timeout_seconds or settings.llm_timeout_seconds
+        self._redactor = redactor or redact_text
+
+    def _redacted(self, text: object) -> str:
+        return self._redactor(text)
 
     def plan(
         self,
@@ -51,7 +58,10 @@ class DeepSeekToolClient:
         tools: list[dict[str, object]],
     ) -> dict[str, Any]:
         payload = {
-            "messages": build_planner_messages(question, scope_label),
+            "messages": build_planner_messages(
+                self._redacted(question),
+                self._redacted(scope_label),
+            ),
             "tools": tools,
             "tool_choice": "auto",
             "temperature": 0.1,
@@ -74,7 +84,10 @@ class DeepSeekToolClient:
             {"role": "system", "content": TOOL_SYNTHESIS_SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"分析范围：{scope_label}\n用户问题：{question}",
+                "content": (
+                    f"分析范围：{self._redacted(scope_label)}\n"
+                    f"用户问题：{self._redacted(question)}"
+                ),
             },
             assistant_message,
             *tool_messages,
@@ -107,17 +120,13 @@ class DeepSeekToolClient:
             raise ToolCallingResponseError("DeepSeek 合成回答缺少 answer。")
         if not isinstance(limitations, list) or not isinstance(evidence_call_ids, list):
             raise ToolCallingResponseError("DeepSeek 合成回答字段类型异常。")
-        executed_ids = {
-            str(message.get("tool_call_id")) for message in tool_messages
-        }
+        executed_ids = {str(message.get("tool_call_id")) for message in tool_messages}
         if not set(str(item) for item in evidence_call_ids) <= executed_ids:
             raise ToolCallingResponseError("DeepSeek 引用了不存在的工具证据。")
         return {
             "answer": answer.strip(),
             "limitations": [
-                str(item).strip()
-                for item in limitations
-                if str(item).strip()
+                str(item).strip() for item in limitations if str(item).strip()
             ],
             "evidence_call_ids": [str(item) for item in evidence_call_ids],
         }

@@ -49,7 +49,9 @@ class AppApiIntegrationTests(unittest.TestCase):
         self.assertIn('"ai_insight_id"', clear_state)
 
     def test_rating_sentiment_mismatch_tab_uses_dedicated_backend_fields(self):
-        self.assertIn('full_summary.get("rating_sentiment_mismatches", [])', self.source)
+        self.assertIn(
+            'full_summary.get("rating_sentiment_mismatches", [])', self.source
+        )
         self.assertIn('"rating_sentiment_mismatch_count"', self.source)
         self.assertNotIn('.str.contains("高星低情绪"', self.source)
 

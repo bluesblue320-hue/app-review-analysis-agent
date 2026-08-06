@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from uuid import uuid4
 
@@ -23,6 +23,9 @@ class DatasetRecord:
     columns: tuple[str, ...]
     created_at: datetime
     expires_at: datetime
+    removed_rows: int = 0
+    invalid_rating_rows: int = 0
+    invalid_reasons: dict[str, int] = None  # type: ignore[assignment]
 
 
 class InMemoryDatasetStore:
@@ -31,9 +34,11 @@ class InMemoryDatasetStore:
         self._lock = RLock()
 
     def create(self, filename: str, content: bytes) -> DatasetRecord:
-        raw_dataframe, prepared = parse_and_prepare_dataset(filename, content, settings)
+        raw_dataframe, prepared, stats = parse_and_prepare_dataset(
+            filename, content, settings
+        )
         original_rows = int(len(raw_dataframe))
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         expires_at = created_at + timedelta(days=settings.data_retention_days)
         dataset_id = f"dataset_{uuid4().hex}"
         record = DatasetRecord(
@@ -44,6 +49,9 @@ class InMemoryDatasetStore:
             columns=tuple(str(column) for column in raw_dataframe.columns),
             created_at=created_at,
             expires_at=expires_at,
+            removed_rows=stats.removed_rows,
+            invalid_rating_rows=stats.invalid_rating_rows,
+            invalid_reasons=stats.invalid_reasons,
         )
         with self._lock:
             self._records[dataset_id] = record
@@ -52,7 +60,7 @@ class InMemoryDatasetStore:
     def get(self, dataset_id: str) -> DatasetRecord:
         with self._lock:
             record = self._records.get(dataset_id)
-            if record is None or record.expires_at <= datetime.now(timezone.utc):
+            if record is None or record.expires_at <= datetime.now(UTC):
                 self._records.pop(dataset_id, None)
                 raise DatasetNotFoundError(dataset_id)
             return self._copy_record(record)
@@ -63,9 +71,11 @@ class InMemoryDatasetStore:
                 raise DatasetNotFoundError(dataset_id)
 
     def cleanup_expired(self) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._lock:
-            expired = [key for key, value in self._records.items() if value.expires_at <= now]
+            expired = [
+                key for key, value in self._records.items() if value.expires_at <= now
+            ]
             for key in expired:
                 self._records.pop(key, None)
             return len(expired)
@@ -88,6 +98,9 @@ class InMemoryDatasetStore:
             columns=record.columns,
             created_at=record.created_at,
             expires_at=record.expires_at,
+            removed_rows=record.removed_rows,
+            invalid_rating_rows=record.invalid_rating_rows,
+            invalid_reasons=dict(record.invalid_reasons or {}),
         )
 
 
