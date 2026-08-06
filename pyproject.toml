@@ -28,8 +28,10 @@ dependencies = [
 
 [project.optional-dependencies]
 langchain = [
-    "langchain-core>=0.3,<0.4",
-    "langchain-deepseek>=0.1,<0.2",
+    "langchain-core==0.3.60",
+    "langchain-deepseek==0.1.4",
+    "langchain-openai==0.3.0",
+    "langsmith==0.1.147",
 ]
 dev = [
     "pytest==9.1.1",

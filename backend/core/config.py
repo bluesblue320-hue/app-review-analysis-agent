@@ -35,6 +35,7 @@ class Settings:
     max_summary_review_rows: int = 100
     llm_timeout_seconds: int = 60
     llm_max_tool_calls: int = 3
+    agent_adapter: str = "direct"
     enable_docs: bool = True
 
 
@@ -78,8 +79,17 @@ def load_settings() -> Settings:
             _positive_int_from_env("LLM_MAX_TOOL_CALLS", 3),
             3,
         ),
+        agent_adapter=_validated_adapter(
+            os.getenv("AGENT_ADAPTER", "direct").strip().lower()
+        ),
         enable_docs=raw_enable_docs in {"true", "1", "yes"},
     )
+
+
+def _validated_adapter(raw_adapter: str) -> str:
+    if raw_adapter not in {"direct", "langchain"}:
+        raise ValueError("AGENT_ADAPTER must be direct or langchain")
+    return raw_adapter
 
 
 settings = load_settings()

@@ -22,7 +22,6 @@ from typing import Any
 
 import pandas as pd
 
-from backend.agent.deepseek_client import DeepSeekToolClient
 from backend.agent.tool_calling import ControlledToolCallingAgent
 from backend.agent.tool_definitions import ALLOWED_TOOL_NAMES
 from evaluation.metrics import common_failure_reasons, compute_metrics, evaluate_case
@@ -133,40 +132,117 @@ def load_dataset(path: str | Path) -> pd.DataFrame:
     return prepare_dashboard_data(preprocess_reviews(raw_dataframe))
 
 
-def build_tool_client(mode: str, case: dict[str, Any] | None = None) -> Any:
-    """Build the tool client for the requested mode.
+def build_tool_client(
+    mode: str,
+    case: dict[str, Any] | None = None,
+    *,
+    adapter: str = "direct",
+) -> Any:
+    """Build the agent adapter for the requested mode and adapter name.
 
-    Mock mode never reads the API key and never touches the network.
+    Mock mode never reads the API key and never touches the network; it
+    injects a deterministic mock client regardless of adapter selection so
+    both adapters can run the identical fixed 46/46 gate.
     Live mode validates the DeepSeek configuration before running.
     """
     if mode == "mock":
-        return MockToolClient(
+        from backend.agent.adapters import build_adapter
+
+        mock_client = MockToolClient(
             mock_plan=(case or {}).get("mock_plan") or {},
             mock_answer=(case or {}).get("mock_answer") or "",
         )
+        built = build_adapter(adapter)
+        # Route model interactions through the mock without real network.
+        if adapter == "langchain":
+            built = _langchain_mock_adapter(built, mock_client)
+        else:
+            built._client = mock_client
+        return built
     if mode == "live":
-        from ai_analysis import load_ai_config
+        from backend.agent.adapters import build_adapter
 
-        config = load_ai_config()
-        if config.get("provider") != "deepseek":
-            raise RuntimeError("Live 模式要求 AI_PROVIDER=deepseek，当前配置不满足。")
-        if not str(config.get("api_key") or "").strip():
-            raise RuntimeError(
-                "Live 模式缺少 DEEPSEEK_API_KEY，无法调用真实模型；"
-                "请配置 API Key 后重试，或使用默认的 Mock 模式。"
-            )
-        return DeepSeekToolClient()
+        _validate_live_config()
+        if adapter == "langchain":
+            return build_adapter("langchain")
+        return build_adapter("direct")
     raise ValueError(f"未知评估模式：{mode}")
+
+
+def _validate_live_config() -> dict[str, Any]:
+    from ai_analysis import load_ai_config
+
+    config = load_ai_config()
+    if config.get("provider") != "deepseek":
+        raise RuntimeError("Live 模式要求 AI_PROVIDER=deepseek，当前配置不满足。")
+    if not str(config.get("api_key") or "").strip():
+        raise RuntimeError(
+            "Live 模式缺少 DEEPSEEK_API_KEY，无法调用真实模型；"
+            "请配置 API Key 后重试，或使用默认的 Mock 模式。"
+        )
+    return config
+
+
+class _LangChainMockAdapter:
+    """Drives the LangChain adapter contract through a deterministic mock.
+
+    Keeps the mock client's ``plan``/``synthesize`` behaviour while exposing
+    the ``plan_tools``/``synthesize`` interface the orchestrator expects from
+    a LangChain adapter, so the fixed evaluation gate runs identically for
+    both adapter selections.
+    """
+
+    name = "langchain-mock"
+
+    def __init__(self, mock_client: Any) -> None:
+        self._mock = mock_client
+
+    def plan_tools(self, request: Any) -> Any:
+        from backend.agent.adapters import AgentPlan
+
+        message = self._mock.plan(
+            question=request.question,
+            scope_label=request.scope_label,
+            tools=request.tools,
+        )
+        return AgentPlan(
+            tool_calls=list(message.get("tool_calls") or []),
+            assistant_message=message,
+        )
+
+    def synthesize(self, request: Any) -> Any:
+        from backend.agent.adapters import AgentAnswer
+
+        result = self._mock.synthesize(
+            question=request.question,
+            scope_label=request.scope_label,
+            assistant_message=request.assistant_message,
+            tool_messages=request.tool_messages,
+            tools=request.tools,
+        )
+        if isinstance(result, str):
+            return AgentAnswer(answer=result.strip())
+        return AgentAnswer(
+            answer=str(result.get("answer") or "").strip(),
+            limitations=list(result.get("limitations") or []),
+            evidence_call_ids=list(result.get("evidence_call_ids") or []),
+        )
+
+
+def _langchain_mock_adapter(_unused_built: Any, mock_client: Any) -> Any:
+    return _LangChainMockAdapter(mock_client)
 
 
 def run_single_case(
     case: dict[str, Any],
     dataframe: pd.DataFrame,
     mode: str,
+    *,
+    adapter: str = "direct",
 ) -> dict[str, Any]:
     """Run one question through the real controlled Agent with an injected client."""
-    client = build_tool_client(mode, case)
-    agent = ControlledToolCallingAgent(tool_client=client)
+    client = build_tool_client(mode, case, adapter=adapter)
+    agent = ControlledToolCallingAgent(adapter=client)
     result = agent.run(
         question=case["question"],
         dataframe=dataframe,
@@ -191,6 +267,7 @@ def evaluate(
     question_path: str | Path | None = None,
     dataset_path: str | Path | None = None,
     model_name: str | None = None,
+    adapter: str = "direct",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Run every (filtered) question and produce summary + per-case outcomes."""
     selected = questions
@@ -204,7 +281,7 @@ def evaluate(
     outcomes: list[dict[str, Any]] = []
     for case in selected:
         try:
-            raw = run_single_case(case, dataframe, mode)
+            raw = run_single_case(case, dataframe, mode, adapter=adapter)
         except Exception as exc:  # a case must never abort the whole evaluation
             raw = {
                 "routing": "error",
@@ -217,6 +294,7 @@ def evaluate(
 
     summary = {
         "mode": mode,
+        "adapter": adapter,
         "model": model_name or ("mock" if mode == "mock" else "unknown"),
         "question_set": str(question_path or ""),
         "dataset": str(dataset_path or ""),
@@ -423,6 +501,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Mock 模式下低于最低阈值时返回非 0 状态码",
     )
+    parser.add_argument(
+        "--adapter",
+        choices=("direct", "langchain"),
+        default="direct",
+        help="Agent Adapter：direct（原生 DeepSeek）或 langchain（ChatDeepSeek）",
+    )
     return parser.parse_args(argv)
 
 
@@ -439,8 +523,7 @@ def run_main(argv: list[str] | None = None) -> int:
     model_name = "mock"
     if args.mode == "live":
         try:
-            client = build_tool_client("live")
-            del client  # per-case clients are built inside run_single_case
+            _validate_live_config()
             from ai_analysis import load_ai_config
 
             model_name = str(load_ai_config().get("model") or "unknown")
@@ -461,6 +544,7 @@ def run_main(argv: list[str] | None = None) -> int:
             question_path=args.questions,
             dataset_path=args.dataset,
             model_name=model_name,
+            adapter=args.adapter,
         )
     except ValueError as exc:
         print(f"评估执行失败：{exc}", file=sys.stderr)

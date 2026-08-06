@@ -10,6 +10,11 @@ from typing import Any, Literal
 import pandas as pd
 
 from agent_workflow import run_agent
+from backend.agent.adapters import AgentAnswer, AgentPlanRequest, SynthesisRequest
+from backend.agent.adapters.langchain_adapter import (
+    LangChainAdapterError,
+    LangChainUnavailableError,
+)
 from backend.agent.deepseek_client import DeepSeekToolClient, ToolCallingError
 from backend.agent.guardrails import (
     UnsupportedClaimError,
@@ -22,6 +27,9 @@ from backend.core.config import settings
 from backend.core.privacy import redact_text
 from backend.core.serialization import dataframe_to_records
 from intent_router import GENERAL_INTENT, INTENT_RULES, detect_intent
+
+# Errors raised by either adapter are recoverable model-side failures.
+_AdapterErrors = (ToolCallingError, LangChainAdapterError, LangChainUnavailableError)
 
 RoutingMode = Literal["rule", "tool_calling", "rule_fallback"]
 FAST_RULE_TOOLS = {
@@ -73,10 +81,21 @@ class ControlledToolCallingAgent:
         self,
         *,
         tool_client: DeepSeekToolClient | None = None,
+        adapter: Any | None = None,
         tool_executor: ToolExecutor | None = None,
         max_tool_calls: int | None = None,
     ) -> None:
-        self._tool_client = tool_client or DeepSeekToolClient()
+        if adapter is not None:
+            self._adapter = adapter
+        elif tool_client is not None:
+            from backend.agent.adapters.direct_adapter import DirectDeepSeekAdapter
+
+            self._adapter = DirectDeepSeekAdapter()
+            self._adapter._client = tool_client
+        else:
+            from backend.agent.adapters import build_adapter
+
+            self._adapter = build_adapter(settings.agent_adapter)
         self._tool_executor = tool_executor or ToolExecutor()
         configured_limit = max_tool_calls or settings.llm_max_tool_calls
         self._max_tool_calls = min(max(1, configured_limit), 3)
@@ -228,12 +247,18 @@ class ControlledToolCallingAgent:
     ) -> ControlledAgentResult:
         definitions = deepseek_tool_definitions()
         try:
-            assistant_message = self._tool_client.plan(
-                question=question,
-                scope_label=scope_label,
-                tools=definitions,
+            plan = self._adapter.plan_tools(
+                AgentPlanRequest(
+                    question=question,
+                    scope_label=scope_label,
+                    tools=definitions,
+                )
             )
-        except ToolCallingError as exc:
+        except (
+            ToolCallingError,
+            LangChainAdapterError,
+            LangChainUnavailableError,
+        ) as exc:
             return self._fallback(
                 question,
                 dataframe,
@@ -242,7 +267,8 @@ class ControlledToolCallingAgent:
                 warning=f"模型规划失败（{type(exc).__name__}），已降级到原规则工作流。",
             )
 
-        raw_calls = assistant_message.get("tool_calls") or []
+        assistant_message = plan.assistant_message or {}
+        raw_calls = plan.tool_calls
         if not isinstance(raw_calls, list) or not raw_calls:
             return self._fallback(
                 question,
@@ -279,18 +305,20 @@ class ControlledToolCallingAgent:
         tables = self._merge_tables(successful)
         tool_messages = [self._tool_message(item) for item in executions]
         try:
-            synthesis = self._tool_client.synthesize(
-                question=question,
-                scope_label=scope_label,
-                assistant_message={
-                    **assistant_message,
-                    "tool_calls": selected_calls,
-                },
-                tool_messages=tool_messages,
-                tools=definitions,
+            answer_value = self._adapter.synthesize(
+                SynthesisRequest(
+                    question=question,
+                    scope_label=scope_label,
+                    assistant_message={
+                        **assistant_message,
+                        "tool_calls": selected_calls,
+                    },
+                    tool_messages=tool_messages,
+                    tools=definitions,
+                )
             )
             answer, limitations, claimed_evidence_ids = self._normalize_synthesis(
-                synthesis
+                answer_value
             )
             if not self._numbers_are_grounded(answer, evidence):
                 raise ValueError("模型回答包含工具结果中不存在的数字")
@@ -310,7 +338,7 @@ class ControlledToolCallingAgent:
                 warning=f"模型结论约束失败（{type(exc).__name__}），已降级到原规则工作流。",
                 evidence_call_ids=[item.tool_call_id for item in successful],
             )
-        except (ToolCallingError, ValueError) as exc:
+        except (*_AdapterErrors, ValueError) as exc:
             return self._fallback(
                 question,
                 dataframe,
@@ -359,6 +387,12 @@ class ControlledToolCallingAgent:
     def _normalize_synthesis(
         value: Any,
     ) -> tuple[str, list[str], list[str]]:
+        if isinstance(value, AgentAnswer):
+            return (
+                value.answer.strip(),
+                list(value.limitations),
+                list(value.evidence_call_ids),
+            )
         if isinstance(value, str):
             answer = value.strip()
             limitations: list[str] = []
