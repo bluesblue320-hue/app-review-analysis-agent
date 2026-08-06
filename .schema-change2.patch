@@ -1,7 +1,0 @@
-diff --git a/backend/schemas/agent.py b/backend/schemas/agent.py
---- a/backend/schemas/agent.py
-+++ b/backend/schemas/agent.py
-@@ -43,2 +43,3 @@ class AgentQueryResponse(StrictModel):
-     evidence: dict[str, Any] = Field(default_factory=dict)
-     warnings: list[str] = Field(default_factory=list)
-+    limitations: list[str] = Field(default_factory=list)

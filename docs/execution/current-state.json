@@ -1,0 +1,20 @@
+{
+  "run_id": "upgrade-20260806",
+  "current_stage": 0,
+  "checkpoint": "CP0",
+  "status": "running",
+  "last_passed_checkpoint": null,
+  "start_commit": "3ee5dba8ac21977b88af8e2f976b3c13be4d3f17",
+  "current_commit": "03d4bf106814b5793fab2727f23c2e6ebab185d7",
+  "blocked_reason": null,
+  "tests": {
+    "collect_only": {"count": 145, "status": "passed"},
+    "full_pytest": {"passed": 145, "subtests_passed": 3, "failed": 0, "status": "passed"},
+    "coverage_total": 64.0,
+    "coverage_stmts": 2379,
+    "mock_agent": {"total": 46, "passed": 46, "failed": 0, "all_metrics": 1.0, "status": "passed"}
+  },
+  "known_failures": [],
+  "next_action": "stage 1: agent reliability, data quality, CI and security baseline",
+  "updated_at": "2026-08-06T16:25:00+08:00"
+}

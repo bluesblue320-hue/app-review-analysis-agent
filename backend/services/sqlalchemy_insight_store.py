@@ -52,8 +52,14 @@ class SqlAlchemyInsightStore:
                 raise InsightNotFoundError(insight_id)
             return self._record(model)
 
-    def resolve(self, **kwargs):
-        insight_id = kwargs.get("insight_id")
+    def resolve(
+        self,
+        *,
+        insight_id: str | None,
+        dataset_id: str,
+        scope_signature: str,
+        sample_size: int,
+    ) -> tuple[dict | None, str | None]:
         if insight_id is None:
             return None, None
         from backend.services.insight_store import (
@@ -66,9 +72,9 @@ class SqlAlchemyInsightStore:
         except InsightNotFoundError:
             return None, INSIGHT_NOT_FOUND_WARNING
         if (
-            record.dataset_id != kwargs["dataset_id"]
-            or record.scope_signature != kwargs["scope_signature"]
-            or record.sample_size != int(kwargs["sample_size"])
+            record.dataset_id != dataset_id
+            or record.scope_signature != scope_signature
+            or record.sample_size != int(sample_size)
         ):
             return None, INSIGHT_SCOPE_MISMATCH_WARNING
         return record.insights, None
@@ -77,12 +83,23 @@ class SqlAlchemyInsightStore:
         with self._runtime.session_factory.begin() as session:
             session.execute(delete(InsightModel))
 
-    @staticmethod
     def delete_dataset(self, dataset_id: str) -> None:
         with self._runtime.session_factory.begin() as session:
             session.execute(delete(InsightModel).where(InsightModel.dataset_id == dataset_id))
 
-    def _record(model: InsightModel) -> InsightRecord:
+    def cleanup_expired(self) -> int:
+        now = datetime.now(timezone.utc)
+        with self._runtime.session_factory.begin() as session:
+            expired_ids = session.scalars(
+                select(InsightModel.insight_id).where(InsightModel.expires_at <= now)
+            ).all()
+            if expired_ids:
+                session.execute(
+                    delete(InsightModel).where(InsightModel.insight_id.in_(expired_ids))
+                )
+            return len(expired_ids)
+
+    def _record(self, model: InsightModel) -> InsightRecord:
         return InsightRecord(
             insight_id=model.insight_id,
             dataset_id=model.dataset_id,

@@ -23,6 +23,11 @@ docs/superpowers/
 # Logs
 *.log
 
+# Temporary scaffolding patches and coverage artifacts
+.*.patch
+.coverage.*
+coverage.xml
+
 # Raw/processed review data and generated word-cloud output
 *.csv
 *_wordcloud.html

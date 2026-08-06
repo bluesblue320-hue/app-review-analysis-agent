@@ -209,7 +209,6 @@ class AnalyticsService:
             warnings=[insight_warning] if insight_warning else [],
         )
 
-    @staticmethod
         self._cache.set(cache_key, response.model_dump(mode="json"))
         return response
 
@@ -247,6 +246,7 @@ class AnalyticsService:
         )
 
     def _renamed_records(
+        self,
         dataframe: pd.DataFrame,
         columns: dict[str, str],
     ) -> list[dict[str, object]]:

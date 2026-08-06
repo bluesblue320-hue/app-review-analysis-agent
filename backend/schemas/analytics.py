@@ -102,19 +102,19 @@ class ReviewPreviewItem(StrictModel):
 
 
 class RatingSentimentMismatchItem(StrictModel):
+    rating: float
+    sentiment: float
+    category: str
+    risk_label: str
+    content: str
+
+
 class ReviewSearchResponse(StrictModel):
     items: list[ReviewPreviewItem]
     total: int
     offset: int
     limit: int
     next_offset: int | None = None
-
-
-    rating: float
-    sentiment: float
-    category: str
-    risk_label: str
-    content: str
 
 
 class AnalyticsSummaryResponse(StrictModel):
