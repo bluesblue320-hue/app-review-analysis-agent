@@ -1,22 +1,45 @@
 {
   "run_id": "upgrade-20260806",
-  "current_stage": 2,
-  "checkpoint": "CP1",
-  "status": "running",
-  "last_passed_checkpoint": "CP1",
+  "current_stage": 8,
+  "checkpoint": "CP7",
+  "status": "completed",
+  "last_passed_checkpoint": "CP7",
   "start_commit": "3ee5dba8ac21977b88af8e2f976b3c13be4d3f17",
-  "current_commit": "0eae65a",
-  "blocked_reason": null,
+  "current_commit": "stage-7-final",
+  "blocked_reason": "live-comparison-deferred-no-api-key",
   "tests": {
-    "collect_only": {"count": 178, "status": "passed"},
-    "full_pytest": {"passed": 180, "subtests_passed": 3, "failed": 0, "status": "passed"},
-    "coverage_total": 70.0,
-    "coverage_stmts": 2468,
-    "mock_agent": {"total": 46, "passed": 46, "failed": 0, "all_metrics": 1.0, "status": "passed"},
+    "full_pytest": {"passed": 340, "subtests_passed": 3, "failed": 0, "status": "passed"},
+    "coverage_total": 82.76,
+    "coverage_stmts": 3005,
+    "coverage_gate": 80.0,
+    "mock_agent_direct": {"total": 46, "passed": 46, "failed": 0, "status": "passed"},
+    "mock_agent_langchain": {"total": 46, "passed": 46, "failed": 0, "status": "passed"},
     "ruff": "passed",
-    "ruff_format": "passed"
+    "ruff_format": "passed",
+    "failure_drill": {"checks": 6, "passed": 6, "status": "passed"},
+    "benchmark_10000": {
+      "upload_p95_s": 24.83,
+      "summary_p95_ms": 56.34,
+      "pagination_p95_ms": 2.57,
+      "rule_agent_p95_ms": 188.46,
+      "status": "all_targets_met"
+    }
   },
   "known_failures": [],
-  "next_action": "stage 2: Direct and LangChain dual adapter with shared orchestrator",
-  "updated_at": "2026-08-06T17:20:00+08:00"
+  "deferred_items": [
+    "live-comparison: Direct/LangChain x3 each + comparison.md (needs DEEPSEEK_API_KEY and network)",
+    "docker-compose-up: syntax validated; real boot on deploy environment",
+    "backup-drill: pg_dump/restore needs PostgreSQL instance (script delivered)"
+  ],
+  "stage_reports": [
+    "docs/execution/stage-1-report.md",
+    "docs/execution/stage-2-report.md",
+    "docs/execution/stage-3-report.md",
+    "docs/execution/stage-4-report.md",
+    "docs/execution/stage-5-report.md",
+    "docs/execution/stage-6-report.md",
+    "docs/execution/stage-7-report.md"
+  ],
+  "next_action": "portfolio: fill live-comparison when DEEPSEEK_API_KEY is available; final coverage gate on CI Linux runner",
+  "updated_at": "2026-08-07T09:50:00+08:00"
 }

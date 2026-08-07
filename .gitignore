@@ -39,6 +39,11 @@ coverage.xml
 # Generated evaluation reports (keep only the placeholder)
 evaluation/reports/*
 !evaluation/reports/.gitkeep
+# Deterministic CI gate and live-comparison artifacts stay tracked
+!evaluation/reports/mock-gate/
+!evaluation/reports/mock-gate/**
+!evaluation/reports/live-comparison/
+!evaluation/reports/live-comparison/**
 data/
 *.db
 *.sqlite
