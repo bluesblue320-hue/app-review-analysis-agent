@@ -316,6 +316,33 @@ class TestInsightLock:
 
 class TestCacheServiceSelection:
     def test_service_uses_null_cache_when_no_redis(self) -> None:
-        from backend.services.cache_service import cache_service
+        # Explicit selection logic, independent of ambient REDIS_URL so the
+        # test passes whether or not a Redis integration step set it.
+        from unittest.mock import MagicMock
 
-        assert isinstance(cache_service, NullCache)
+        from backend.services.cache_service import NullCache, build_cache
+
+        mock_settings = MagicMock()
+        mock_settings.redis_url = ""
+        with patch("backend.services.cache_service.settings", mock_settings):
+            cache = build_cache(redis_url=None, memory=False)
+        assert isinstance(cache, NullCache)
+
+    def test_service_uses_memory_cache_when_requested(self) -> None:
+        from unittest.mock import MagicMock
+
+        from backend.services.cache_service import MemoryCache, build_cache
+
+        mock_settings = MagicMock()
+        mock_settings.redis_url = ""
+        with patch("backend.services.cache_service.settings", mock_settings):
+            cache = build_cache(redis_url=None, memory=True)
+        assert isinstance(cache, MemoryCache)
+
+    def test_service_uses_redis_cache_when_url_given(self) -> None:
+        from backend.services.cache_service import build_cache
+
+        with patch("backend.services.cache_service.RedisCache") as mock_cls:
+            build_cache(redis_url="redis://localhost:6379/0")
+            mock_cls.assert_called_once()
+        assert True  # construction delegated to RedisCache
