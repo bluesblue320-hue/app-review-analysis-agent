@@ -118,6 +118,27 @@ class BackendApiClient:
             json=payload,
         )
 
+    def search_reviews(
+        self,
+        *,
+        dataset_id: str,
+        filters: dict[str, Any],
+        view: str = "all",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            "/api/v1/reviews/search",
+            json={
+                "dataset_id": dataset_id,
+                "filters": filters,
+                "view": view,
+                "offset": offset,
+                "limit": limit,
+            },
+        )
+
     def _request_json(
         self,
         method: str,
