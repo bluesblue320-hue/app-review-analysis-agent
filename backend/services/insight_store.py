@@ -29,10 +29,15 @@ class InsightRecord:
     created_at: datetime
     expires_at: datetime
 
+    @property
+    def is_expired(self) -> bool:
+        return self.expires_at <= datetime.now(UTC)
+
 
 class InMemoryInsightStore:
     def __init__(self) -> None:
         self._records: dict[str, InsightRecord] = {}
+        self._fingerprints: dict[str, str] = {}  # fingerprint -> insight_id
         self._lock = RLock()
 
     def _fingerprint_for(
@@ -79,15 +84,28 @@ class InMemoryInsightStore:
 
     def find_by_fingerprint(self, fingerprint: str) -> InsightRecord | None:
         with self._lock:
-            for record in self._records.values():
-                stored = self._fingerprint_for(
-                    dataset_id=record.dataset_id,
-                    scope_signature=record.scope_signature,
-                    sample_size=record.sample_size,
-                )
-                if stored == fingerprint and record.expires_at > datetime.now(UTC):
-                    return self._copy_record(record)
-        return None
+            return self.get_by_fingerprint(fingerprint, include_expired=False)
+
+    def get_by_fingerprint(
+        self, fingerprint: str, *, include_expired: bool = False
+    ) -> InsightRecord | None:
+        """Return the record for a fingerprint, optionally including expired ones.
+
+        Distinguishes "not found", "found but expired" (include_expired=True)
+        and "found and unexpired" so the service can decide between reuse,
+        refresh and insert.
+        """
+        now = datetime.now(UTC)
+        with self._lock:
+            insight_id = self._fingerprints.get(fingerprint)
+            if insight_id is None:
+                return None
+            record = self._records.get(insight_id)
+            if record is None:
+                return None
+            if not include_expired and record.expires_at <= now:
+                return None
+            return self._copy_record(record)
 
     def upsert_fingerprint(
         self,
@@ -116,6 +134,7 @@ class InMemoryInsightStore:
                 expires_at=created_at + timedelta(days=settings.data_retention_days),
             )
             self._records[record.insight_id] = record
+            self._fingerprints[fingerprint] = record.insight_id
             return self._copy_record(record)
 
     def refresh_expired(
@@ -127,18 +146,10 @@ class InMemoryInsightStore:
         model_name: str = "deepseek-v4-flash",
     ) -> InsightRecord:
         with self._lock:
-            target = None
-            for record in self._records.values():
-                stored = self._fingerprint_for(
-                    dataset_id=record.dataset_id,
-                    scope_signature=record.scope_signature,
-                    sample_size=record.sample_size,
-                )
-                if stored == fingerprint:
-                    target = record
-                    break
-            if target is None:
+            insight_id = self._fingerprints.get(fingerprint)
+            if insight_id is None:
                 raise InsightNotFoundError(fingerprint)
+            target = self._records[insight_id]
             now = datetime.now(UTC)
             updated = InsightRecord(
                 insight_id=target.insight_id,

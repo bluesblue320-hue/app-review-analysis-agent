@@ -59,6 +59,9 @@ class InsightRepository(Protocol):
         sample_size: int,
     ) -> tuple[dict[str, Any] | None, str | None]: ...
     def find_by_fingerprint(self, fingerprint: str) -> InsightRecord | None: ...
+    def get_by_fingerprint(
+        self, fingerprint: str, *, include_expired: bool = False
+    ) -> InsightRecord | None: ...
     def upsert_fingerprint(
         self,
         *,

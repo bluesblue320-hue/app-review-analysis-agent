@@ -84,6 +84,25 @@ class MemoryCache:
                 if key.startswith(prefix):
                     self._entries.pop(key, None)
 
+    def lock_set(self, key: str, token: str, ttl_seconds: int) -> bool:
+        """Atomically set a lock entry; False when already held (not expired)."""
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None and entry[0] > time.monotonic():
+                return False
+            self._entries[key] = (
+                time.monotonic() + max(1, int(ttl_seconds)),
+                {"token": token},
+            )
+            return True
+
+    def lock_delete_if_token(self, key: str, token: str) -> None:
+        """Delete the lock entry only when the stored token matches."""
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry and entry[1].get("token") == token:
+                self._entries.pop(key, None)
+
     def ready(self) -> bool:
         return True
 
@@ -165,31 +184,69 @@ class RedisCache:
         return self._client
 
 
-class InsightLock:
-    """Atomic Redis short lock guarding duplicate AI-insight model calls.
+class InsightLease:
+    """Request-scoped lock lease for one insight generation.
 
-    The lock only reduces duplicate model calls (cost optimization); data
-    uniqueness is guaranteed by the PostgreSQL UNIQUE(insight_fingerprint)
-    constraint and insert-or-get-existing, so Redis failure never breaks the
-    system.
+    Holds ``key``/``token``/``acquired`` for the caller only. Exiting the
+    lease releases exactly this key + this token; it never touches leases
+    held by other requests.
+    """
+
+    def __init__(
+        self,
+        lock: "InsightLock",
+        key: str,
+        token: str,
+        acquired: bool,
+    ) -> None:
+        self.key = key
+        self.token = token
+        self.acquired = acquired
+        self._lock = lock
+
+    def __enter__(self) -> "InsightLease":
+        return self
+
+    def __exit__(self, *_exc) -> bool:
+        if self.acquired:
+            self._lock._release_token(self.key, self.token)
+        return False
+
+
+class InsightLock:
+    """Atomic short lock guarding duplicate AI-insight model calls.
+
+    The lock reduces duplicate model calls (cost optimization); data
+    uniqueness is always guaranteed by the PostgreSQL UNIQUE constraint and
+    insert-or-get-existing, so Redis failure never breaks the system.
+
+    Usage is request-scoped:
+
+        with insight_lock.hold(key) as lease:
+            if not lease.acquired:
+                # another caller is generating: wait briefly and reuse
+                # the result via find_by_fingerprint, or return a
+                # generation-in-progress error. Never call the model.
+                ...
     """
 
     def __init__(self, cache: Any, lock_ttl_seconds: int = 30) -> None:
         self._cache = cache
         self._lock_ttl_seconds = lock_ttl_seconds
-        self._local: dict[str, str] = {}
-        self._local_lock = threading.RLock()
 
-    def acquire(self, key: str) -> bool:
-        """Try to take the lock; returns True when this caller holds it."""
+    def hold(self, key: str) -> InsightLease:
+        """Acquire a request-scoped lease for ``key``."""
         token = uuid.uuid4().hex
+        acquired = self._try_acquire(key, token)
+        return InsightLease(lock=self, key=key, token=token, acquired=acquired)
+
+    def _try_acquire(self, key: str, token: str) -> bool:
         if isinstance(self._cache, RedisCache):
             try:
                 acquired = self._cache._client_handle().set(
                     key, token, nx=True, ex=self._lock_ttl_seconds
                 )
-                if not acquired:
-                    return False
+                return bool(acquired)
             except Exception as exc:
                 logger.warning(
                     "Redis lock acquire failed: error_type=%s", type(exc).__name__
@@ -197,28 +254,13 @@ class InsightLock:
                 # Redis failure: let the caller proceed; PostgreSQL still
                 # guarantees a single insight row.
                 return True
-        elif isinstance(self._cache, MemoryCache):
-            with self._local_lock:
-                entry = self._cache._entries.get(key)
-                if entry is not None and entry[0] > time.monotonic():
-                    return False
-                self._cache._entries[key] = (
-                    time.monotonic() + self._lock_ttl_seconds,
-                    {"token": token},
-                )
-        else:
-            # NullCache: no lock, rely on the database constraint.
-            return True
-        with self._local_lock:
-            self._local[key] = token
+        if isinstance(self._cache, MemoryCache):
+            return self._cache.lock_set(key, token, self._lock_ttl_seconds)
+        # NullCache: no lock, rely on the database constraint.
         return True
 
-    def release(self, key: str) -> None:
-        """Release only when this caller still holds the token (token-safe)."""
-        with self._local_lock:
-            token = self._local.pop(key, None)
-        if token is None:
-            return
+    def _release_token(self, key: str, token: str) -> None:
+        """Release the lock only when the stored token matches (token-safe)."""
         if isinstance(self._cache, RedisCache):
             try:
                 pipeline = self._cache._client_handle().pipeline()
@@ -234,18 +276,7 @@ class InsightLock:
                     "Redis lock release failed: error_type=%s", type(exc).__name__
                 )
         elif isinstance(self._cache, MemoryCache):
-            with self._local_lock:
-                entry = self._cache._entries.get(key)
-                if entry and entry[1].get("token") == token:
-                    self._cache._entries.pop(key, None)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_exc):
-        for key in list(self._local):
-            self.release(key)
-        return False
+            self._cache.lock_delete_if_token(key, token)
 
 
 def summary_cache_key(dataset_id: str, payload: dict[str, Any]) -> str:

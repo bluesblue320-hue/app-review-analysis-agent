@@ -55,14 +55,19 @@ class SqlAlchemyInsightStore:
         )
 
     def find_by_fingerprint(self, fingerprint: str) -> InsightRecord | None:
+        return self.get_by_fingerprint(fingerprint, include_expired=False)
+
+    def get_by_fingerprint(
+        self, fingerprint: str, *, include_expired: bool = False
+    ) -> InsightRecord | None:
         now = datetime.now(UTC)
         with self._runtime.session_factory.begin() as session:
-            model = session.scalars(
-                select(InsightModel).where(
-                    InsightModel.insight_fingerprint == fingerprint,
-                    InsightModel.expires_at > now,
-                )
-            ).first()
+            statement = select(InsightModel).where(
+                InsightModel.insight_fingerprint == fingerprint
+            )
+            if not include_expired:
+                statement = statement.where(InsightModel.expires_at > now)
+            model = session.scalars(statement).first()
             if model is None:
                 return None
             return self._record(model)

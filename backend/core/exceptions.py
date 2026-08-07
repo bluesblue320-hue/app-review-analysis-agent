@@ -42,3 +42,10 @@ class DatasetNotFoundError(AppError):
 class AiServiceError(AppError):
     def __init__(self, message: str) -> None:
         super().__init__("ai_service_error", message, 503)
+
+
+class InsightGenerationInProgressError(AppError):
+    """Another request is generating the same insight; do not duplicate."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("insight_generation_in_progress", message, 409)

@@ -277,6 +277,61 @@ def test_find_by_fingerprint_hits_and_expired_miss(insight_store) -> None:
         model = session.get(InsightModel, record.insight_id)
         model.expires_at = datetime.now(UTC) - timedelta(days=1)
     assert insight_store.find_by_fingerprint(fingerprint) is None
+    # include_expired=True still returns the expired record so the service can
+    # distinguish "expired" from "not found" and refresh it in place.
+    expired = insight_store.get_by_fingerprint(fingerprint, include_expired=True)
+    assert expired is not None
+    assert expired.insight_id == record.insight_id
+    assert expired.is_expired is True
+    # get_by_fingerprint(include_expired=False) behaves like find_by_fingerprint.
+    assert insight_store.get_by_fingerprint(fingerprint) is None
+
+
+def test_refresh_expired_after_get_by_fingerprint_keeps_id(insight_store) -> None:
+    from backend.storage.database import DatasetModel
+
+    runtime = insight_store._runtime
+    with runtime.session_factory.begin() as session:
+        session.add(
+            DatasetModel(
+                dataset_id="d_ref",
+                filename="f.csv",
+                original_rows=1,
+                valid_rows=1,
+                columns_json=["评分"],
+                content_hash="h",
+                analysis_version="v1",
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
+    fingerprint = compute_insight_fingerprint(
+        dataset_id="d_ref", scope_signature="sig", sample_size=1
+    )
+    first = insight_store.upsert_fingerprint(
+        fingerprint=fingerprint,
+        dataset_id="d_ref",
+        scope_signature="sig",
+        sample_size=1,
+        insights={"summary": "旧内容"},
+    )
+    # Expire the record.
+    with runtime.session_factory.begin() as session:
+        model = session.get(InsightModel, first.insight_id)
+        model.expires_at = datetime.now(UTC) - timedelta(days=1)
+
+    # Service flow: include_expired finds it, then refresh replaces payload.
+    refreshed = insight_store.refresh_expired(
+        fingerprint=fingerprint,
+        insights={"summary": "新内容"},
+        provider="deepseek",
+        model_name="deepseek-v4-flash",
+    )
+    assert refreshed.insight_id == first.insight_id  # same id kept
+    assert refreshed.insights["summary"] == "新内容"
+    assert refreshed.expires_at > datetime.now(UTC)
+    # No expired content is served afterward.
+    assert insight_store.find_by_fingerprint(fingerprint).insights["summary"] == "新内容"
 
 
 def test_cleanup_expired_insights_idempotent(insight_store) -> None:

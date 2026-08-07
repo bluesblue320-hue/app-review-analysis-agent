@@ -206,35 +206,57 @@ class TestInsightLock:
         cache = MemoryCache()
         lock = InsightLock(cache)
         key = "ara:dev:v1:lock:insight:d1:sig"
-        assert lock.acquire(key) is True
-        assert lock.acquire(key) is False  # still held
-        lock.release(key)
-        assert lock.acquire(key) is True  # released
+        with lock.hold(key) as first:
+            assert first.acquired is True
+            with lock.hold(key) as second:
+                assert second.acquired is False  # still held
+        with lock.hold(key) as after:
+            assert after.acquired is True  # released on first exit
 
-    def test_memory_lock_token_safe_release(self) -> None:
+    def test_lease_exit_only_releases_its_own_token(self) -> None:
         cache = MemoryCache()
         lock = InsightLock(cache)
         key = "ara:dev:v1:lock:insight:d1:sig"
-        assert lock.acquire(key) is True
-        # A second lock instance must not release the first holder's lock.
-        other = InsightLock(cache)
-        other.acquire(key)
-        other.release(key)
-        # First holder's token still in effect.
-        assert lock.acquire(key) is False
+        with lock.hold(key) as first:
+            assert first.acquired is True
+            # A second lease for the same key fails to acquire.
+            with lock.hold(key) as second:
+                assert second.acquired is False
+            # Exiting the second lease must NOT release the first holder.
+            with lock.hold(key) as third:
+                assert third.acquired is False  # still held by first
+        with lock.hold(key) as after:
+            assert after.acquired is True  # only released after first exits
+
+    def test_token_mismatch_does_not_delete_lock(self) -> None:
+        cache = MemoryCache()
+        lock = InsightLock(cache)
+        key = "ara:dev:v1:lock:insight:d1:sig"
+        with lock.hold(key) as lease:
+            assert lease.acquired is True
+            # Simulate a stale/foreign token: must not delete the lock.
+            cache.lock_delete_if_token(key, "wrong-token")
+            with lock.hold(key) as second:
+                assert second.acquired is False  # still held
 
     def test_memory_lock_ttl_expiry_recovers(self) -> None:
         cache = MemoryCache()
         lock = InsightLock(cache, lock_ttl_seconds=1)
         key = "ara:dev:v1:lock:insight:d1:sig"
-        assert lock.acquire(key) is True
+        with lock.hold(key) as first:
+            assert first.acquired is True
         time.sleep(1.1)
-        assert lock.acquire(key) is True  # expired -> recoverable
+        # A fresh lease held past TTL is still recoverable after expiry.
+        with lock.hold(key) as held:
+            assert held.acquired is True
+        time.sleep(1.1)
+        with lock.hold(key) as after:
+            assert after.acquired is True  # expired -> recoverable
 
     def test_null_cache_lock_always_succeeds(self) -> None:
         lock = InsightLock(NullCache())
-        assert lock.acquire("k") is True
-        lock.release("k")
+        with lock.hold("k") as lease:
+            assert lease.acquired is True
 
     def test_redis_lock_acquire_and_release(self) -> None:
         client = MagicMock()
@@ -243,11 +265,12 @@ class TestInsightLock:
             cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
         lock = InsightLock(cache)
         key = "ara:dev:v1:lock:insight:d1:sig"
-        assert lock.acquire(key) is True
-        client.set.assert_called_once()
-        args = client.set.call_args
-        assert args[1]["nx"] is True
-        assert args[1]["ex"] == 30
+        with lock.hold(key) as lease:
+            assert lease.acquired is True
+            client.set.assert_called_once()
+            args = client.set.call_args
+            assert args[1]["nx"] is True
+            assert args[1]["ex"] == 30
 
     def test_redis_lock_not_acquired_when_held(self) -> None:
         client = MagicMock()
@@ -255,7 +278,8 @@ class TestInsightLock:
         with patch("redis.Redis.from_url", return_value=client):
             cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
         lock = InsightLock(cache)
-        assert lock.acquire("k") is False
+        with lock.hold("k") as lease:
+            assert lease.acquired is False
 
     def test_redis_lock_acquire_failure_proceeds(self) -> None:
         client = MagicMock()
@@ -264,15 +288,31 @@ class TestInsightLock:
             cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
         lock = InsightLock(cache)
         # Redis failure degrades to "proceed"; PostgreSQL ensures uniqueness.
-        assert lock.acquire("k") is True
+        with lock.hold("k") as lease:
+            assert lease.acquired is True
 
-    def test_context_manager_releases_all(self) -> None:
-        cache = MemoryCache()
+    def test_redis_lock_release_requires_matching_token(self) -> None:
+        client = MagicMock()
+        client.set.return_value = True
+        pipeline = MagicMock()
+        client.pipeline.return_value = pipeline
+        with patch("redis.Redis.from_url", return_value=client):
+            cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
         lock = InsightLock(cache)
         key = "ara:dev:v1:lock:insight:d1:sig"
-        with lock:
-            assert lock.acquire(key) is True
-        assert lock.acquire(key) is True  # released on exit
+        with lock.hold(key) as lease:
+            assert lease.acquired is True
+            stored_token = lease.token
+            # Mismatch: caller claims a different token than stored -> no delete.
+            pipeline.get.return_value = stored_token
+            lock._release_token(key, "foreign-token")
+            assert pipeline.multi.called is False
+            # Match: caller claims the stored token -> delete proceeds.
+            pipeline.multi.reset_mock()
+            pipeline.get.return_value = stored_token
+            lock._release_token(key, stored_token)
+            assert pipeline.multi.called is True
+            assert pipeline.delete.called
 
 
 class TestCacheServiceSelection:

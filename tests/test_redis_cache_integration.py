@@ -156,20 +156,22 @@ class TestInsightShortLockSingleModelCall:
         lock = InsightLock(cache)
         key = "ara:dev:v1:lock:insight:d1:sig"
 
-        assert lock.acquire(key) is True
-        # While the lock is held, a second caller is excluded.
-        assert lock.acquire(key) is False
-        lock.release(key)
-        assert lock.acquire(key) is True
-        lock.release(key)
+        with lock.hold(key) as first:
+            assert first.acquired is True
+            # While the lease is held, a second caller is excluded.
+            with lock.hold(key) as second:
+                assert second.acquired is False
+        with lock.hold(key) as after:
+            assert after.acquired is True  # released
 
     def test_lock_released_after_context(self) -> None:
         cache = MemoryCache()
         lock = InsightLock(cache)
         key = "ara:dev:v1:lock:insight:d1:sig"
-        with lock:
-            assert lock.acquire(key) is True
-        assert lock.acquire(key) is True
+        with lock.hold(key) as lease:
+            assert lease.acquired is True
+        with lock.hold(key) as after:
+            assert after.acquired is True  # released on exit
 
 
 class TestCacheSerialization:
