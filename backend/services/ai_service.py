@@ -8,6 +8,7 @@ from ai_analysis import AiAnalysisError, analyze_reviews, load_ai_config
 from backend.core.exceptions import AiServiceError, InvalidDatasetError
 from backend.core.serialization import to_json_value
 from backend.schemas.ai import AiConfigResponse, AiInsightsRequest, AiInsightsResponse
+from backend.services.cache_service import insight_lock, insight_lock_key
 from backend.services.dataset_service import InMemoryDatasetStore
 from backend.services.insight_store import InMemoryInsightStore
 from backend.services.repositories import (
@@ -70,27 +71,42 @@ class AiInsightService:
                 scope_signature=scope_signature,
             )
 
-        try:
-            insights = analyze_reviews(dataframe)
-        except AiAnalysisError as exc:
-            raise AiServiceError(str(exc)) from exc
-        insights = to_json_value(insights)
-        if not isinstance(insights, dict):
-            raise AiServiceError("AI 返回结构异常，请稍后重试。")
+        lock_key = insight_lock_key(request.dataset_id, scope_signature)
+        with insight_lock:
+            if not insight_lock.acquire(lock_key):
+                # Another caller generates; fall through to post-model upsert.
+                pass
+            # Re-check after acquiring the lock: a concurrent request may have
+            # persisted the same fingerprint while we waited.
+            existing = self._insight_store.find_by_fingerprint(fingerprint)
+            if existing is not None:
+                return AiInsightsResponse(
+                    insight_id=existing.insight_id,
+                    insights=existing.insights,
+                    sample_size=int(len(dataframe)),
+                    scope_signature=scope_signature,
+                )
+            try:
+                insights = analyze_reviews(dataframe)
+            except AiAnalysisError as exc:
+                raise AiServiceError(str(exc)) from exc
+            insights = to_json_value(insights)
+            if not isinstance(insights, dict):
+                raise AiServiceError("AI 返回结构异常，请稍后重试。")
 
-        record = self._insight_store.create(
-            dataset_id=request.dataset_id,
-            scope_signature=scope_signature,
-            sample_size=len(dataframe),
-            insights=insights,
-            analysis_version=ANALYSIS_VERSION,
-        )
-        return AiInsightsResponse(
-            insight_id=record.insight_id,
-            insights=record.insights,
-            sample_size=int(len(dataframe)),
-            scope_signature=scope_signature,
-        )
+            record = self._insight_store.create(
+                dataset_id=request.dataset_id,
+                scope_signature=scope_signature,
+                sample_size=len(dataframe),
+                insights=insights,
+                analysis_version=ANALYSIS_VERSION,
+            )
+            return AiInsightsResponse(
+                insight_id=record.insight_id,
+                insights=record.insights,
+                sample_size=int(len(dataframe)),
+                scope_signature=scope_signature,
+            )
 
 
 def compute_content_hash_from_frame(dataframe: Any) -> str:

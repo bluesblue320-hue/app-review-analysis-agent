@@ -13,7 +13,11 @@ from backend.schemas.analytics import (
     ReviewSearchRequest,
     ReviewSearchResponse,
 )
-from backend.services.cache_service import cache_service, summary_cache_key
+from backend.services.cache_service import (
+    CACHE_SCHEMA_VERSION,
+    analytics_cache_key,
+    cache_service,
+)
 from backend.services.dataset_service import InMemoryDatasetStore
 from backend.services.insight_store import InMemoryInsightStore
 from backend.services.repositories import (
@@ -57,14 +61,7 @@ class AnalyticsService:
         self,
         request: AnalyticsSummaryRequest,
     ) -> AnalyticsSummaryResponse:
-        record = self._store.get(request.dataset_id)
-        cache_key = summary_cache_key(
-            request.dataset_id,
-            request.model_dump(mode="json"),
-        )
-        cached = self._cache.get(cache_key)
-        if cached is not None:
-            return AnalyticsSummaryResponse.model_validate(cached)
+        record = self._store.get(request.dataset_id)  # validates existence
         filtered = self._scope_service.apply_filters(record.dataframe, request.filters)
         content_hash = record.content_hash or dataframe_scope_signature(
             record.dataframe
@@ -74,6 +71,15 @@ class AnalyticsService:
             request.filters.model_dump(),
             analysis_version=ANALYSIS_VERSION,
         )
+        cache_key = analytics_cache_key(
+            dataset_id=request.dataset_id,
+            scope_signature=scope_signature,
+            analysis_type="summary",
+            insight_id=request.insight_id,
+        )
+        cached = self._cache.get(cache_key)
+        if cached is not None and _valid_cache_payload(cached):
+            return AnalyticsSummaryResponse.model_validate(cached["payload"])
         current_insights, insight_warning = self._insight_store.resolve(
             insight_id=request.insight_id,
             dataset_id=request.dataset_id,
@@ -220,7 +226,14 @@ class AnalyticsService:
             warnings=[insight_warning] if insight_warning else [],
         )
 
-        self._cache.set(cache_key, response.model_dump(mode="json"))
+        self._cache.set(
+            cache_key,
+            {
+                "schema_version": CACHE_SCHEMA_VERSION,
+                "payload": response.model_dump(mode="json"),
+            },
+            ttl_seconds=settings.cache_ttl_seconds,
+        )
         return response
 
     def search_reviews(self, request: ReviewSearchRequest) -> ReviewSearchResponse:
@@ -270,3 +283,12 @@ class AnalyticsService:
         columns: dict[str, str],
     ) -> list[dict[str, object]]:
         return dataframe_to_records(dataframe.rename(columns=columns))
+
+
+def _valid_cache_payload(cached: dict) -> bool:
+    """A cache entry is usable only when schema version matches and payload exists."""
+    return (
+        isinstance(cached, dict)
+        and cached.get("schema_version") == CACHE_SCHEMA_VERSION
+        and isinstance(cached.get("payload"), dict)
+    )
