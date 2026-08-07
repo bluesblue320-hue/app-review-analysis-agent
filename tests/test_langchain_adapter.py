@@ -308,3 +308,131 @@ def test_parse_answer_rejects_empty_text() -> None:
 def test_parse_answer_rejects_non_dict() -> None:
     with pytest.raises(LangChainAdapterError):
         _parse_answer("[1, 2]", lambda text: text)
+
+
+# --- exact ChatDeepSeek initialization contract (no real network calls) ---
+
+
+def _build_chat_model(config):
+    from backend.agent.adapters.langchain_adapter import _build_chat_model as _build
+
+    return _build(config)
+
+
+def test_chat_deepseek_uses_api_base_not_chat_url(monkeypatch) -> None:
+    """LangChain must receive the API base, never /chat/completions."""
+    captured: dict[str, Any] = {}
+
+    class FakeChatDeepSeek:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    # _build_chat_model does `from langchain_deepseek import ChatDeepSeek`
+    # inside the function, so patch the source module attribute.
+    monkeypatch.setattr("langchain_deepseek.ChatDeepSeek", FakeChatDeepSeek)
+    config = {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "api_key": "sk-test",
+        "api_base": "https://api.deepseek.com/v1",
+        "chat_url": "https://api.deepseek.com/chat/completions",
+    }
+    _build_chat_model(config)
+
+    assert captured["model"] == "deepseek-v4-flash"
+    assert captured["api_key"] == "sk-test"
+    assert captured["base_url"] == "https://api.deepseek.com/v1"
+    # The critical contract: LangChain must NOT get the chat endpoint.
+    assert captured["base_url"] != "https://api.deepseek.com/chat/completions"
+
+
+def test_chat_deepseek_requires_api_key(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeChatDeepSeek:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("langchain_deepseek.ChatDeepSeek", FakeChatDeepSeek)
+    with pytest.raises(LangChainUnavailableError):
+        _build_chat_model(
+            {
+                "provider": "deepseek",
+                "model": "deepseek-v4-flash",
+                "api_key": "",
+                "api_base": "https://api.deepseek.com/v1",
+            }
+        )
+    assert captured == {}
+
+
+def test_chat_deepseek_falls_back_to_legacy_base_url_key(monkeypatch) -> None:
+    """Backwards compatibility: configs carrying only base_url still work,
+    and the value is passed through unchanged to ChatDeepSeek."""
+    captured: dict[str, Any] = {}
+
+    class FakeChatDeepSeek:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("langchain_deepseek.ChatDeepSeek", FakeChatDeepSeek)
+    _build_chat_model(
+        {
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+            "api_key": "sk-test",
+            "base_url": "https://legacy.example/v1",
+        }
+    )
+    assert captured["base_url"] == "https://legacy.example/v1"
+
+
+def test_load_ai_config_separates_api_base_and_chat_url(monkeypatch) -> None:
+    """load_ai_config must expose both URLs with distinct values."""
+    from ai_analysis import load_ai_config
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config = load_ai_config()
+    assert config["api_base"] == "https://api.deepseek.com/v1"
+    assert config["chat_url"] == "https://api.deepseek.com/chat/completions"
+    assert config["api_base"] != config["chat_url"]
+
+
+def test_env_overrides_apply_independently(monkeypatch) -> None:
+    """DEEPSEEK_API_BASE and DEEPSEEK_CHAT_URL override independently."""
+    from ai_analysis import load_ai_config
+
+    monkeypatch.setenv("DEEPSEEK_API_BASE", "https://custom.example/v1")
+    monkeypatch.setenv("DEEPSEEK_CHAT_URL", "https://custom.example/chat/completions")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config = load_ai_config()
+    assert config["api_base"] == "https://custom.example/v1"
+    assert config["chat_url"] == "https://custom.example/chat/completions"
+    assert config["api_base"] != config["chat_url"]
+
+
+def test_direct_post_uses_chat_url_not_api_base() -> None:
+    """Direct requests.post must hit the full chat-completions endpoint."""
+    from unittest.mock import MagicMock
+
+    from ai_analysis import call_deepseek
+
+    captured_url: list[str] = []
+
+    def fake_post(url, **kwargs):
+        captured_url.append(url)
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"choices": [{"message": {"content": "{}"}}]}
+        return response
+
+    config = {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "api_key": "sk-test",
+        "api_base": "https://api.deepseek.com/v1",
+        "chat_url": "https://api.deepseek.com/chat/completions",
+    }
+    call_deepseek([{"role": "user", "content": "hi"}], config, post_func=fake_post)
+    assert captured_url == ["https://api.deepseek.com/chat/completions"]
+    assert "https://api.deepseek.com/v1" not in captured_url

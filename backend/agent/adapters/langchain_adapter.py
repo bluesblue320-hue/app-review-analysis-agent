@@ -51,10 +51,15 @@ def _build_chat_model(
 
     from backend.services.repositories import DEFAULT_AI_MODEL
 
+    # LangChain's ChatDeepSeek appends the operation path itself, so it needs
+    # the API base (https://api.deepseek.com/v1), never the full
+    # /chat/completions endpoint (that one belongs to the Direct HTTP path).
+    api_base = str(config.get("api_base") or config.get("base_url") or "").strip()
+
     return ChatDeepSeek(
         model=str(config.get("model") or DEFAULT_AI_MODEL),
         api_key=api_key,
-        base_url=str(config.get("base_url") or ""),
+        base_url=api_base,
         timeout=timeout_seconds or 60,
         temperature=0.1,
         max_tokens=2000,

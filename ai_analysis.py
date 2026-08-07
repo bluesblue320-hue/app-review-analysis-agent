@@ -7,6 +7,10 @@ import pandas as pd
 import requests
 
 from backend.core.privacy import redact_recursive
+
+# Backwards-compatible alias; the single source of truth lives in
+# backend.services.model_config (DEFAULT_DEEPSEEK_CHAT_URL).
+from backend.services.model_config import DEFAULT_DEEPSEEK_CHAT_URL
 from review_fields import (
     CONTENT_COLUMN,
     RATING_COLUMN,
@@ -17,7 +21,7 @@ from review_fields import (
     VERSION_COLUMN,
 )
 
-DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_CHAT_URL = DEFAULT_DEEPSEEK_CHAT_URL
 REQUIRED_COLUMNS = REQUIRED_REVIEW_COLUMNS
 
 
@@ -42,9 +46,11 @@ def load_env_file(path=".env"):
 
 
 def load_ai_config():
-    from backend.services.repositories import (
+    from backend.services.model_config import (
         DEFAULT_AI_MODEL,
         DEFAULT_AI_PROVIDER,
+        DEFAULT_DEEPSEEK_API_BASE,
+        DEFAULT_DEEPSEEK_CHAT_URL,
     )
 
     load_env_file()
@@ -57,7 +63,16 @@ def load_ai_config():
         "provider": provider,
         "model": model,
         "api_key": os.getenv("DEEPSEEK_API_KEY", "").strip(),
-        "base_url": DEEPSEEK_CHAT_URL,
+        # URL contract: api_base -> LangChain ChatDeepSeek; chat_url -> Direct
+        # requests.post. Overridable per-path via DEEPSEEK_API_BASE /
+        # DEEPSEEK_CHAT_URL environment variables.
+        "api_base": os.getenv("DEEPSEEK_API_BASE", DEFAULT_DEEPSEEK_API_BASE).strip()
+        or DEFAULT_DEEPSEEK_API_BASE,
+        "chat_url": os.getenv("DEEPSEEK_CHAT_URL", DEFAULT_DEEPSEEK_CHAT_URL).strip()
+        or DEFAULT_DEEPSEEK_CHAT_URL,
+        # Backwards-compatible alias used by the legacy Direct HTTP path.
+        "base_url": os.getenv("DEEPSEEK_CHAT_URL", DEFAULT_DEEPSEEK_CHAT_URL).strip()
+        or DEFAULT_DEEPSEEK_CHAT_URL,
     }
 
 
@@ -253,7 +268,10 @@ def call_deepseek(messages, config, post_func=requests.post, timeout=60):
 
     try:
         response = post_func(
-            config["base_url"], headers=headers, json=payload, timeout=timeout
+            config.get("chat_url") or config.get("base_url"),
+            headers=headers,
+            json=payload,
+            timeout=timeout,
         )
     except requests.RequestException as exc:
         raise AiAnalysisError(f"DeepSeek 请求失败：{exc}") from exc

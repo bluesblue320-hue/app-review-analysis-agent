@@ -146,7 +146,7 @@ class DeepSeekToolClient:
         }
         try:
             response = self._post(
-                config.get("base_url"),
+                config.get("chat_url") or config.get("base_url"),
                 headers=headers,
                 json=request_payload,
                 timeout=self._timeout_seconds,
