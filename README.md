@@ -190,8 +190,8 @@ python -m evaluation.backup_drill --database-url postgresql+psycopg2://app:app@l
 
 ### 当前基线（仓库内可复现）
 
-- 完整 pytest：**379 passed + 3 subtests**。
-- 全项目覆盖率：最新 CI Linux 基线为 **90.02%**，硬门禁保持 **80%**。
+- 完整 pytest：**385 passed + 3 subtests**。
+- 全项目覆盖率：最新 CI Linux 基线为 **90.10%**，硬门禁保持 **80%**。
 - Agent Mock 评估：**Direct 46/46、LangChain 46/46**。
 - 性能（10,000 行 × 3 次，`evaluation/reports/perf/benchmark.json`）：上传 P95 24.8s、预热摘要 P95 56ms、分页 P95 2.6ms、规则 Agent P95 188ms。
 - 故障演练 6/6 通过（`evaluation/reports/failure-drill/report.json`）。

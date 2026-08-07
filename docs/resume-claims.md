@@ -4,7 +4,7 @@
 
 ## 描述 1（工程能力）
 
-> 独立设计并落地一个 App Store 中文评论舆情分析 Agent（Streamlit + FastAPI + PostgreSQL + Redis）：实现 Direct / LangChain 双 Agent Adapter 共享同一受控 Orchestrator（工具白名单、Pydantic 参数校验、单次规划最多选择 3 个只读分析工具、规则降级），通过 46/46 固定 Mock 评估作为 CI 确定性门禁；GitHub Actions 最新 Linux CI 完成 379 项测试 + 3 subtests，全项目覆盖率 90.02%，并设置 80% 覆盖率硬门禁。
+> 独立设计并落地一个 App Store 中文评论舆情分析 Agent（Streamlit + FastAPI + PostgreSQL + Redis）：实现 Direct / LangChain 双 Agent Adapter 共享同一受控 Orchestrator（工具白名单、Pydantic 参数校验、单次规划最多选择 3 个只读分析工具、规则降级），通过 46/46 固定 Mock 评估作为 CI 确定性门禁；GitHub Actions Linux CI 完成 380+ 项自动化测试，全项目覆盖率约 90%，并设置 80% 覆盖率硬门禁。
 
 证据：`evaluation/reports/mock-gate/`（46/46 × 2）、`docs/execution/stage-2-report.md`、`docs/execution/stage-5-report.md`。
 
