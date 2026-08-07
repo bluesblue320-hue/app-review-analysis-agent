@@ -13,6 +13,7 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
+*.egg-info/
 
 # Local agent/runtime files
 .agents/
@@ -22,6 +23,11 @@ docs/superpowers/
 
 # Logs
 *.log
+
+# Temporary scaffolding patches and coverage artifacts
+.*.patch
+.coverage.*
+coverage.xml
 
 # Raw/processed review data and generated word-cloud output
 *.csv
@@ -34,3 +40,11 @@ docs/superpowers/
 # Generated evaluation reports (keep only the placeholder)
 evaluation/reports/*
 !evaluation/reports/.gitkeep
+# Deterministic CI gate and live-comparison artifacts stay tracked
+!evaluation/reports/mock-gate/
+!evaluation/reports/mock-gate/**
+!evaluation/reports/live-comparison/
+!evaluation/reports/live-comparison/**
+data/
+*.db
+*.sqlite

@@ -77,7 +77,9 @@ class AiAnalysisTests(unittest.TestCase):
         calls = []
 
         def fake_post(url, headers, json, timeout):
-            calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
+            calls.append(
+                {"url": url, "headers": headers, "json": json, "timeout": timeout}
+            )
             return FakeResponse(payload=payload)
 
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=True):
@@ -89,6 +91,26 @@ class AiAnalysisTests(unittest.TestCase):
         self.assertEqual(calls[0]["headers"]["Authorization"], "Bearer sk-test")
         self.assertEqual(calls[0]["json"]["model"], "deepseek-v4-flash")
         self.assertEqual(calls[0]["json"]["response_format"], {"type": "json_object"})
+
+    def test_deepseek_error_does_not_expose_upstream_response_body(self):
+        response = FakeResponse(status_code=401, text="secret upstream detail")
+        config = {
+            "provider": "deepseek",
+            "model": "test-model",
+            "api_key": "sk-secret",
+            "base_url": "https://example.invalid/chat",
+        }
+
+        with self.assertRaises(ai_analysis.AiAnalysisError) as context:
+            ai_analysis.call_deepseek(
+                [],
+                config,
+                post_func=lambda *args, **kwargs: response,
+            )
+
+        self.assertIn("401", str(context.exception))
+        self.assertNotIn("secret upstream detail", str(context.exception))
+        self.assertNotIn("sk-secret", str(context.exception))
 
 
 if __name__ == "__main__":

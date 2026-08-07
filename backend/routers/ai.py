@@ -5,10 +5,10 @@ from fastapi import APIRouter
 from backend.schemas.ai import AiConfigResponse, AiInsightsRequest, AiInsightsResponse
 from backend.services.ai_service import AiInsightService
 from backend.services.dataset_service import dataset_store
-
+from backend.services.insight_store import insight_store
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-ai_service = AiInsightService(dataset_store)
+ai_service = AiInsightService(dataset_store, insight_store)
 
 
 @router.get("/config", response_model=AiConfigResponse)

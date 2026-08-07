@@ -30,8 +30,11 @@ from review_fields import (
     SENTIMENT_COLUMN,
     VERSION_COLUMN,
 )
-from visual_analysis import calculate_priority_table, is_high_risk_label, prepare_dashboard_data
-
+from visual_analysis import (
+    calculate_priority_table,
+    is_high_risk_label,
+    prepare_dashboard_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +81,9 @@ class ToolExecutor:
 
         try:
             parsed_arguments = self._parse_arguments(arguments)
-            validated = TOOL_REGISTRY[name].arguments_model.model_validate(parsed_arguments)
+            validated = TOOL_REGISTRY[name].arguments_model.model_validate(
+                parsed_arguments
+            )
         except (ValueError, TypeError, json.JSONDecodeError, ValidationError) as exc:
             return self._result(
                 tool_call_id,
@@ -137,24 +142,28 @@ class ToolExecutor:
         ai_insights: dict[str, Any] | None,
     ) -> dict[str, Any]:
         if name == "get_review_metrics":
-            result = run_general_analysis("基础指标", dataframe, ai_insights=ai_insights)
+            result = run_general_analysis(
+                "基础指标", dataframe, ai_insights=ai_insights
+            )
             return self._workflow_output(result, len(prepare_dashboard_data(dataframe)))
 
         if name == "analyze_negative_reviews":
             prepared = prepare_dashboard_data(dataframe)
-            result = run_negative_review_analysis("差评分析", prepared, ai_insights=ai_insights)
-            result["dataframes"]["差评关键词"] = result["dataframes"]["差评关键词"].head(
-                arguments["top_n"]
+            result = run_negative_review_analysis(
+                "差评分析", prepared, ai_insights=ai_insights
             )
+            result["dataframes"]["差评关键词"] = result["dataframes"][
+                "差评关键词"
+            ].head(arguments["top_n"])
             sample_size = int((prepared[RATING_COLUMN] <= 3).sum())
             return self._workflow_output(result, sample_size)
 
         if name == "analyze_positive_reviews":
             prepared = prepare_dashboard_data(dataframe)
             result = run_positive_review_analysis("好评分析", prepared)
-            result["dataframes"]["好评关键词"] = result["dataframes"]["好评关键词"].head(
-                arguments["top_n"]
-            )
+            result["dataframes"]["好评关键词"] = result["dataframes"][
+                "好评关键词"
+            ].head(arguments["top_n"])
             sample_size = int((prepared[RATING_COLUMN] >= 4).sum())
             return self._workflow_output(result, sample_size)
 

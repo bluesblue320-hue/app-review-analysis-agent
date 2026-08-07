@@ -1,0 +1,83 @@
+# App Review Analysis Agent - production Compose
+# Only Streamlit (8501) is exposed; FastAPI/PostgreSQL/Redis stay internal.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-app}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      APP_ENV: production
+      APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:?APP_ACCESS_TOKEN must be set}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-deepseek}
+      AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      AGENT_ADAPTER: ${AGENT_ADAPTER:-direct}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_BACKEND: database
+      DATA_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-30}
+      ENABLE_DOCS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "alembic upgrade head &&
+             uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    environment:
+      BACKEND_URL: http://api:8000/api/v1
+      APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:?APP_ACCESS_TOKEN must be set}
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
 
@@ -14,6 +16,14 @@ def to_json_value(value: Any) -> Any:
         return None
     if isinstance(value, np.generic):
         value = value.item()
+    if isinstance(value, np.ndarray):
+        return [to_json_value(item) for item in value.tolist()]
+    if isinstance(value, Mapping):
+        return {str(key): to_json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [to_json_value(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     try:
         if pd.isna(value):
             return None

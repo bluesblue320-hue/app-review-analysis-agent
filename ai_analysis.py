@@ -6,6 +6,11 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from backend.core.privacy import redact_recursive
+
+# Backwards-compatible alias; the single source of truth lives in
+# backend.services.model_config (DEFAULT_DEEPSEEK_CHAT_URL).
+from backend.services.model_config import DEFAULT_DEEPSEEK_CHAT_URL
 from review_fields import (
     CONTENT_COLUMN,
     RATING_COLUMN,
@@ -16,10 +21,7 @@ from review_fields import (
     VERSION_COLUMN,
 )
 
-
-DEFAULT_PROVIDER = "deepseek"
-DEFAULT_MODEL = "deepseek-v4-flash"
-DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_CHAT_URL = DEFAULT_DEEPSEEK_CHAT_URL
 REQUIRED_COLUMNS = REQUIRED_REVIEW_COLUMNS
 
 
@@ -44,14 +46,33 @@ def load_env_file(path=".env"):
 
 
 def load_ai_config():
+    from backend.services.model_config import (
+        DEFAULT_AI_MODEL,
+        DEFAULT_AI_PROVIDER,
+        DEFAULT_DEEPSEEK_API_BASE,
+        DEFAULT_DEEPSEEK_CHAT_URL,
+    )
+
     load_env_file()
-    provider = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
-    model = os.getenv("AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    provider = (
+        os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).strip().lower()
+        or DEFAULT_AI_PROVIDER
+    )
+    model = os.getenv("AI_MODEL", DEFAULT_AI_MODEL).strip() or DEFAULT_AI_MODEL
     return {
         "provider": provider,
         "model": model,
         "api_key": os.getenv("DEEPSEEK_API_KEY", "").strip(),
-        "base_url": DEEPSEEK_CHAT_URL,
+        # URL contract: api_base -> LangChain ChatDeepSeek; chat_url -> Direct
+        # requests.post. Overridable per-path via DEEPSEEK_API_BASE /
+        # DEEPSEEK_CHAT_URL environment variables.
+        "api_base": os.getenv("DEEPSEEK_API_BASE", DEFAULT_DEEPSEEK_API_BASE).strip()
+        or DEFAULT_DEEPSEEK_API_BASE,
+        "chat_url": os.getenv("DEEPSEEK_CHAT_URL", DEFAULT_DEEPSEEK_CHAT_URL).strip()
+        or DEFAULT_DEEPSEEK_CHAT_URL,
+        # Backwards-compatible alias used by the legacy Direct HTTP path.
+        "base_url": os.getenv("DEEPSEEK_CHAT_URL", DEFAULT_DEEPSEEK_CHAT_URL).strip()
+        or DEFAULT_DEEPSEEK_CHAT_URL,
     }
 
 
@@ -103,7 +124,9 @@ def build_review_packet(df, max_reviews=100):
         raise AiAnalysisError(f"CSV 缺少必要列：{missing}")
 
     clean_df = df.copy()
-    clean_df[CONTENT_COLUMN] = clean_df[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    clean_df[CONTENT_COLUMN] = (
+        clean_df[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    )
     clean_df = clean_df[clean_df[CONTENT_COLUMN] != ""].copy()
     clean_df[RATING_COLUMN] = pd.to_numeric(clean_df[RATING_COLUMN], errors="coerce")
     clean_df = clean_df.dropna(subset=[RATING_COLUMN])
@@ -116,8 +139,12 @@ def build_review_packet(df, max_reviews=100):
     positive_limit = max(1, review_limit // 4)
     mismatch_limit = max(0, review_limit - negative_limit - positive_limit)
 
-    negative_pool = clean_df.sort_values([RATING_COLUMN], ascending=True).head(negative_limit)
-    positive_pool = clean_df.sort_values([RATING_COLUMN], ascending=False).head(positive_limit)
+    negative_pool = clean_df.sort_values([RATING_COLUMN], ascending=True).head(
+        negative_limit
+    )
+    positive_pool = clean_df.sort_values([RATING_COLUMN], ascending=False).head(
+        positive_limit
+    )
     pools = [negative_pool, positive_pool]
 
     if mismatch_limit and SENTIMENT_COLUMN in clean_df.columns:
@@ -240,12 +267,17 @@ def call_deepseek(messages, config, post_func=requests.post, timeout=60):
     }
 
     try:
-        response = post_func(config["base_url"], headers=headers, json=payload, timeout=timeout)
+        response = post_func(
+            config.get("chat_url") or config.get("base_url"),
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+        )
     except requests.RequestException as exc:
         raise AiAnalysisError(f"DeepSeek 请求失败：{exc}") from exc
 
     if response.status_code != 200:
-        raise AiAnalysisError(f"DeepSeek 返回异常状态码 {response.status_code}：{response.text}")
+        raise AiAnalysisError(f"DeepSeek 返回异常状态码 {response.status_code}。")
 
     try:
         data = response.json()
@@ -257,6 +289,9 @@ def call_deepseek(messages, config, post_func=requests.post, timeout=60):
 def analyze_reviews(df, post_func=requests.post, max_reviews=100):
     config = load_ai_config()
     review_packet = build_review_packet(df, max_reviews=max_reviews)
-    messages = build_messages(review_packet)
+    # Redact PII at the model-request boundary: the payload actually sent to
+    # DeepSeek must never contain raw phones/emails/IDs/bank cards.
+    safe_review_packet = redact_recursive(review_packet)
+    messages = build_messages(safe_review_packet)
     content = call_deepseek(messages, config, post_func=post_func)
     return normalize_insights(parse_json_content(content))

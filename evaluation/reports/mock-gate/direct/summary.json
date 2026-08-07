@@ -1,0 +1,78 @@
+{
+  "mode": "mock",
+  "adapter": "direct",
+  "model": "mock",
+  "question_set": "C:\\Users\\30306\\Desktop\\xhs\\evaluation\\agent_questions.json",
+  "dataset": "C:\\Users\\30306\\Desktop\\xhs\\evaluation\\fixtures\\evaluation_reviews.csv",
+  "generated_at": "2026-08-07T09:45:38",
+  "total_cases": 46,
+  "passed_cases": 46,
+  "failed_cases": 0,
+  "metrics": {
+    "routing_accuracy": 1.0,
+    "tool_exact_match_rate": 1.0,
+    "tool_precision": 1.0,
+    "tool_recall": 1.0,
+    "tool_f1": 1.0,
+    "required_tool_success_rate": 1.0,
+    "any_tool_success_rate": 1.0,
+    "argument_accuracy": 1.0,
+    "illegal_tool_block_rate": 1.0,
+    "fallback_success_rate": 1.0,
+    "grounded_number_check_rate": 1.0,
+    "answer_constraint_pass_rate": 1.0
+  },
+  "per_category": {
+    "simple_metric": {
+      "total": 5,
+      "passed": 5,
+      "failed_ids": []
+    },
+    "simple_version": {
+      "total": 4,
+      "passed": 4,
+      "failed_ids": []
+    },
+    "simple_negative": {
+      "total": 4,
+      "passed": 4,
+      "failed_ids": []
+    },
+    "simple_positive": {
+      "total": 4,
+      "passed": 4,
+      "failed_ids": []
+    },
+    "risk_review": {
+      "total": 4,
+      "passed": 4,
+      "failed_ids": []
+    },
+    "complex_multi_tool": {
+      "total": 6,
+      "passed": 6,
+      "failed_ids": []
+    },
+    "parameter_extraction": {
+      "total": 5,
+      "passed": 5,
+      "failed_ids": []
+    },
+    "unanswerable": {
+      "total": 4,
+      "passed": 4,
+      "failed_ids": []
+    },
+    "adversarial": {
+      "total": 4,
+      "passed": 4,
+      "failed_ids": []
+    },
+    "degradation": {
+      "total": 6,
+      "passed": 6,
+      "failed_ids": []
+    }
+  },
+  "common_failure_reasons": {}
+}

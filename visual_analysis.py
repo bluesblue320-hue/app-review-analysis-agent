@@ -11,9 +11,7 @@ from review_fields import (
     RISK_LABEL_COLUMN,
     SENTIMENT_COLUMN,
     TIME_COLUMN_CANDIDATES,
-    TOKEN_COLUMN,
 )
-
 
 ISSUE_KEYWORDS = {
     "账号类": ["封号", "禁言", "限流", "实名", "申诉", "账号", "登录", "注销"],
@@ -73,10 +71,13 @@ def prepare_dashboard_data(df):
         raise ValueError(f"缺少必要列：{missing}")
 
     prepared = df.copy()
-    prepared[CONTENT_COLUMN] = prepared[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    prepared[CONTENT_COLUMN] = (
+        prepared[CONTENT_COLUMN].fillna("").astype(str).str.strip()
+    )
     prepared = prepared[prepared[CONTENT_COLUMN] != ""].copy()
     prepared[RATING_COLUMN] = pd.to_numeric(prepared[RATING_COLUMN], errors="coerce")
     prepared = prepared.dropna(subset=[RATING_COLUMN]).copy()
+    prepared = prepared[prepared[RATING_COLUMN].between(1, 5, inclusive="both")].copy()
 
     if SENTIMENT_COLUMN not in prepared.columns:
         prepared[SENTIMENT_COLUMN] = 50.0
@@ -141,11 +142,15 @@ def filter_reviews(
     keyword = str(keyword or "").strip()
     if keyword:
         filtered = filtered[
-            filtered[CONTENT_COLUMN].str.contains(re.escape(keyword), case=False, na=False)
+            filtered[CONTENT_COLUMN].str.contains(
+                re.escape(keyword), case=False, na=False
+            )
         ].copy()
 
     if high_risk_only:
-        filtered = filtered[filtered[RISK_LABEL_COLUMN].apply(is_high_risk_label)].copy()
+        filtered = filtered[
+            filtered[RISK_LABEL_COLUMN].apply(is_high_risk_label)
+        ].copy()
 
     return filtered
 
@@ -211,7 +216,9 @@ def representative_review(group):
     if group.empty:
         return ""
 
-    sorted_group = group.sort_values([RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True])
+    sorted_group = group.sort_values(
+        [RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True]
+    )
     return str(sorted_group.iloc[0][CONTENT_COLUMN])
 
 
@@ -244,7 +251,9 @@ def calculate_priority_table(df, ai_insights=None, top_n=5):
         volume_score = min(negative_count / total_negative, 1.0) * 100
         sentiment_score = max(0.0, min(100.0, 100 - average_sentiment))
         rating_score = max(0.0, min(100.0, (5 - average_rating) / 4 * 100))
-        ai_data = ai_category_map.get(category, {"severity_score": 50.0, "suggestion": ""})
+        ai_data = ai_category_map.get(
+            category, {"severity_score": 50.0, "suggestion": ""}
+        )
         ai_score = ai_data["severity_score"]
         risk_score = high_risk_count / max(len(group), 1) * 100
 
@@ -274,7 +283,11 @@ def calculate_priority_table(df, ai_insights=None, top_n=5):
     if priority.empty:
         return priority
 
-    return priority.sort_values("优先级分数", ascending=False).head(top_n).reset_index(drop=True)
+    return (
+        priority.sort_values("优先级分数", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
 
 
 def rating_distribution(df):
@@ -306,13 +319,23 @@ def sentiment_distribution(df):
         include_lowest=True,
         right=True,
     )
-    distribution = bucket.value_counts(sort=False).rename_axis("情绪区间").reset_index(name="评论数")
+    distribution = (
+        bucket.value_counts(sort=False)
+        .rename_axis("情绪区间")
+        .reset_index(name="评论数")
+    )
     distribution["情绪区间"] = distribution["情绪区间"].astype(str)
     return distribution
 
 
 def sentiment_scatter_data(df):
-    columns = [RATING_COLUMN, SENTIMENT_COLUMN, CATEGORY_COLUMN, RISK_LABEL_COLUMN, CONTENT_COLUMN]
+    columns = [
+        RATING_COLUMN,
+        SENTIMENT_COLUMN,
+        CATEGORY_COLUMN,
+        RISK_LABEL_COLUMN,
+        CONTENT_COLUMN,
+    ]
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
     return df[columns].copy()

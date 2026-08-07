@@ -13,7 +13,6 @@ from snownlp import SnowNLP
 
 from review_fields import CONTENT_COLUMN, SENTIMENT_COLUMN, TOKEN_COLUMN
 
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_SENTIMENT_SCORE = 50.0

@@ -125,11 +125,12 @@ def dataframe_scope_signature(df):
         )
 
     row_hashes = pd.util.hash_pandas_object(normalized, index=True).values.tobytes()
-    header = f"{len(df)}|{'|'.join(columns)}|".encode("utf-8")
+    header = f"{len(df)}|{'|'.join(columns)}|".encode()
     return hashlib.sha256(header + row_hashes).hexdigest()
 
 
 def match_ai_insights(ai_insights, stored_signature, df):
+    """Match insights for legacy/offline callers; API services resolve insight IDs."""
     if not isinstance(ai_insights, dict) or not stored_signature:
         return None
     if stored_signature != dataframe_scope_signature(df):
@@ -190,9 +191,7 @@ def run_risk_review_analysis(question, df):
     if error:
         return _result(intent, error, {"高风险评论": pd.DataFrame()})
 
-    risk_reviews = prepared[
-        prepared[RISK_LABEL_COLUMN].astype(str) != "正常"
-    ].copy()
+    risk_reviews = prepared[prepared[RISK_LABEL_COLUMN].astype(str) != "正常"].copy()
     risk_reviews = risk_reviews.sort_values(
         [RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True]
     )
@@ -310,11 +309,7 @@ def run_trend_analysis(question, df):
             "上升" if rating_delta > 0 else "下降" if rating_delta < 0 else "持平"
         )
         sentiment_direction = (
-            "上升"
-            if sentiment_delta > 0
-            else "下降"
-            if sentiment_delta < 0
-            else "持平"
+            "上升" if sentiment_delta > 0 else "下降" if sentiment_delta < 0 else "持平"
         )
         answer = (
             f"最近两个时间点相比，平均评分{rating_direction} {abs(rating_delta)} 分，"
@@ -371,9 +366,7 @@ def run_report_generation(question, df, ai_insights=None):
     metrics = calculate_health_metrics(prepared)
     priority = calculate_priority_table(prepared, ai_insights=ai_insights, top_n=5)
     risks = prepared[prepared[RISK_LABEL_COLUMN].astype(str) != "正常"].copy()
-    risks = risks.sort_values(
-        [RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True]
-    )
+    risks = risks.sort_values([RATING_COLUMN, SENTIMENT_COLUMN], ascending=[True, True])
     risk_table = risks[_review_columns(risks)].head(20).reset_index(drop=True)
     summary = _safe_ai_text(ai_insights, "summary") or (
         "本部分未使用在线 AI 洞察，结论来自当前评论统计。"
@@ -382,8 +375,7 @@ def run_report_generation(question, df, ai_insights=None):
         ai_insights, "recommendations"
     ) or _statistical_recommendations(priority)
     recommendation_text = (
-        "\n".join(f"- {item}" for item in recommendations)
-        or "- 暂无足够信息生成建议。"
+        "\n".join(f"- {item}" for item in recommendations) or "- 暂无足够信息生成建议。"
     )
     if priority.empty:
         priority_text = "当前没有足够数据生成问题优先级。"
@@ -396,11 +388,11 @@ def run_report_generation(question, df, ai_insights=None):
 
 ## 一、核心指标
 
-- 评论数：{metrics['total_reviews']}
-- 平均评分：{metrics['average_rating']}
-- 差评占比：{metrics['negative_ratio']}%
-- 平均情绪指数：{metrics['average_sentiment']}
-- 高风险评论数：{metrics['high_risk_count']}
+- 评论数：{metrics["total_reviews"]}
+- 平均评分：{metrics["average_rating"]}
+- 差评占比：{metrics["negative_ratio"]}%
+- 平均情绪指数：{metrics["average_sentiment"]}
+- 高风险评论数：{metrics["high_risk_count"]}
 
 ## 二、问题优先级
 
@@ -418,9 +410,7 @@ def run_report_generation(question, df, ai_insights=None):
 
 {recommendation_text}
 """
-    return _result(
-        intent, report, {"问题优先级": priority, "高风险评论": risk_table}
-    )
+    return _result(intent, report, {"问题优先级": priority, "高风险评论": risk_table})
 
 
 def run_general_analysis(question, df, ai_insights=None):
@@ -465,9 +455,7 @@ def run_agent(question, df, ai_insights=None, scope="完整上传数据"):
         result = workflow(question, df)
 
     sample_size = len(df) if isinstance(df, pd.DataFrame) else 0
-    normalized_scope = (
-        "当前筛选结果" if scope == "当前筛选结果" else "完整上传数据"
-    )
+    normalized_scope = "当前筛选结果" if scope == "当前筛选结果" else "完整上传数据"
     if normalized_scope == "当前筛选结果":
         prefix = f"以下结论基于当前筛选后的 {sample_size} 条评论。"
     else:

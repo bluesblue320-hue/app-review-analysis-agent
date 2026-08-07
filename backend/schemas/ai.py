@@ -20,6 +20,7 @@ class AiInsightsRequest(StrictModel):
 
 
 class AiInsightsResponse(StrictModel):
+    insight_id: str
     insights: dict[str, Any]
     sample_size: int
     scope_signature: str

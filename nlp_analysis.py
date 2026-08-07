@@ -22,7 +22,6 @@ from review_preprocessing import calculate_sentiment as calculate_sentiment_scor
 from review_preprocessing import clean_and_tokenize
 from visual_analysis import extract_keyword_scores
 
-
 INPUT_FILE = "xiaohongshu_reviews.csv"
 OUTPUT_FILE = "xiaohongshu_reviews_with_sentiment.csv"
 BAD_WORDCLOUD_FILE = "bad_reviews_wordcloud.html"
@@ -160,14 +159,18 @@ def _render_wordclouds(
     negative_cloud = (
         WordCloud()
         .add("", negative_keywords, word_size_range=[20, 100], shape="diamond")
-        .set_global_opts(title_opts=opts.TitleOpts(title="🚨 竞品核心槽点分析 (差评词云)"))
+        .set_global_opts(
+            title_opts=opts.TitleOpts(title="🚨 竞品核心槽点分析 (差评词云)")
+        )
     )
     negative_cloud.render(BAD_WORDCLOUD_FILE)
 
     positive_cloud = (
         WordCloud()
         .add("", positive_keywords, word_size_range=[20, 100], shape="star")
-        .set_global_opts(title_opts=opts.TitleOpts(title="✨ 竞品核心爽点分析 (好评词云)"))
+        .set_global_opts(
+            title_opts=opts.TitleOpts(title="✨ 竞品核心爽点分析 (好评词云)")
+        )
     )
     positive_cloud.render(GOOD_WORDCLOUD_FILE)
 

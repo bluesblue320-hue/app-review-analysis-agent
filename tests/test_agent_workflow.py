@@ -61,7 +61,9 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertIsInstance(result["dataframes"], dict)
 
     def test_negative_workflow_returns_keywords_priority_and_examples(self):
-        result = agent_workflow.run_negative_review_analysis("差评问题", self.make_reviews())
+        result = agent_workflow.run_negative_review_analysis(
+            "差评问题", self.make_reviews()
+        )
 
         self.assert_result_shape(result, "negative_review_analysis")
         self.assertEqual(
@@ -78,13 +80,17 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertTrue((risks["风险标签"] != "正常").all())
 
     def test_positive_workflow_returns_keyword_table(self):
-        result = agent_workflow.run_positive_review_analysis("喜欢什么", self.make_reviews())
+        result = agent_workflow.run_positive_review_analysis(
+            "喜欢什么", self.make_reviews()
+        )
 
         self.assert_result_shape(result, "positive_review_analysis")
         self.assertFalse(result["dataframes"]["好评关键词"].empty)
 
     def test_version_workflow_aggregates_and_sorts_problem_versions(self):
-        result = agent_workflow.run_version_analysis("哪个版本问题最多", self.make_reviews())
+        result = agent_workflow.run_version_analysis(
+            "哪个版本问题最多", self.make_reviews()
+        )
 
         self.assert_result_shape(result, "version_analysis")
         version_table = result["dataframes"]["版本分析"]
@@ -162,7 +168,9 @@ class AgentWorkflowTests(unittest.TestCase):
         )
 
         self.assertEqual(result["intent"], "negative_review_analysis")
-        self.assertTrue(result["answer"].startswith("以下结论基于当前筛选后的 3 条评论。"))
+        self.assertTrue(
+            result["answer"].startswith("以下结论基于当前筛选后的 3 条评论。")
+        )
         self.assertEqual(
             result["meta"],
             {"scope": "当前筛选结果", "sample_size": 3},

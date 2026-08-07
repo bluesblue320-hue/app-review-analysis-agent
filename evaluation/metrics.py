@@ -67,9 +67,7 @@ def _answer_constraint_checks(
 ) -> dict[str, bool]:
     must_contain_any = list(answer_expectations.get("must_contain_any") or [])
     must_not_contain = list(answer_expectations.get("must_not_contain") or [])
-    requires_uncertainty = bool(
-        answer_expectations.get("requires_uncertainty", False)
-    )
+    requires_uncertainty = bool(answer_expectations.get("requires_uncertainty", False))
     return {
         "must_contain_ok": not must_contain_any
         or any(item in answer for item in must_contain_any),
@@ -87,9 +85,7 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     tool_calls = list(raw.get("tool_calls") or [])
 
     success_tools = [
-        str(item["name"])
-        for item in tool_calls
-        if item.get("status") == "success"
+        str(item["name"]) for item in tool_calls if item.get("status") == "success"
     ]
     expected_all = list(case.get("expected_tools_all") or [])
     expected_any = list(case.get("expected_tools_any") or [])
@@ -103,7 +99,10 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     checks: dict[str, bool] = {}
     failure_reasons: list[str] = []
 
-    checks["routing_ok"] = actual_routing == case.get("expected_routing")
+    checks["routing_ok"] = actual_routing == case.get("expected_routing") or (
+        actual_routing == "rule_fallback"
+        and bool(case.get("allow_rule_fallback", False))
+    )
     if not checks["routing_ok"]:
         failure_reasons.append(
             f"路由不正确：期望 {case.get('expected_routing')}，实际 {actual_routing}"
@@ -178,8 +177,11 @@ def evaluate_case(case: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     elif grounded_check == "pass":
         checks["grounded_ok"] = (
             actual_routing == "tool_calling"
-            and not any(GROUNDED_FALLBACK_WARNING in w for w in warnings)
-        )
+            or (
+                actual_routing == "rule_fallback"
+                and bool(case.get("allow_rule_fallback", False))
+            )
+        ) and not any(GROUNDED_FALLBACK_WARNING in w for w in warnings)
         if not checks["grounded_ok"]:
             failure_reasons.append("数字可信度校验未通过")
     else:
@@ -284,19 +286,11 @@ def compute_metrics(outcomes: list[dict[str, Any]]) -> dict[str, float | None]:
         1 for item in required_cases if item["checks"]["required_tools_ok"]
     )
     any_ok = sum(1 for item in any_cases if item["checks"]["any_tools_ok"])
-    argument_ok = sum(
-        1 for item in argument_cases if item["checks"]["arguments_ok"]
-    )
+    argument_ok = sum(1 for item in argument_cases if item["checks"]["arguments_ok"])
     illegal_cases = [item for item in outcomes if item["expects_illegal_tool"]]
-    illegal_ok = sum(
-        1 for item in illegal_cases if item["checks"]["illegal_block_ok"]
-    )
-    fallback_ok = sum(
-        1 for item in degradation_cases if item["checks"]["fallback_ok"]
-    )
-    grounded_ok = sum(
-        1 for item in grounded_cases if item["checks"]["grounded_ok"]
-    )
+    illegal_ok = sum(1 for item in illegal_cases if item["checks"]["illegal_block_ok"])
+    fallback_ok = sum(1 for item in degradation_cases if item["checks"]["fallback_ok"])
+    grounded_ok = sum(1 for item in grounded_cases if item["checks"]["grounded_ok"])
     answer_ok = sum(1 for item in outcomes if item["checks"]["answer_ok"])
 
     return {
