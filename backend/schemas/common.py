@@ -14,6 +14,7 @@ class ErrorDetail(StrictModel):
 
 class ErrorResponse(StrictModel):
     error: ErrorDetail
+    request_id: str = ""
 
 
 class HealthResponse(StrictModel):

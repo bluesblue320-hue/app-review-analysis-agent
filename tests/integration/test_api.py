@@ -187,12 +187,12 @@ def test_upload_rejects_non_csv_file(client: TestClient):
     )
 
     assert response.status_code == 415
-    assert response.json() == {
-        "error": {
-            "code": "unsupported_file_type",
-            "message": "仅支持 CSV 文件。",
-        }
+    body = response.json()
+    assert body["error"] == {
+        "code": "unsupported_file_type",
+        "message": "仅支持 CSV 文件。",
     }
+    assert body["request_id"] == response.headers.get("X-Request-ID")
 
 
 def test_summary_returns_deterministic_analysis_and_json_records(client: TestClient):

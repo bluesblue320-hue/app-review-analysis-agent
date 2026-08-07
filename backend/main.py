@@ -19,9 +19,21 @@ from backend.schemas.common import ErrorDetail, ErrorResponse
 logger = logging.getLogger(__name__)
 
 
-def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
-    payload = ErrorResponse(error=ErrorDetail(code=code, message=message))
-    return JSONResponse(status_code=status_code, content=payload.model_dump())
+def _error_response(
+    request: Request,
+    status_code: int,
+    code: str,
+    message: str,
+) -> JSONResponse:
+    """Build an error response whose body and header share the request ID."""
+    request_id = getattr(request.state, "request_id", "") or ""
+    payload = ErrorResponse(
+        error=ErrorDetail(code=code, message=message),
+        request_id=request_id,
+    )
+    response = JSONResponse(status_code=status_code, content=payload.model_dump())
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 def create_app() -> FastAPI:
@@ -29,6 +41,9 @@ def create_app() -> FastAPI:
         title="App Review Analysis Agent API",
         version="1.0.0",
         lifespan=application_lifespan,
+        docs_url="/docs" if settings.enable_docs else None,
+        redoc_url="/redoc" if settings.enable_docs else None,
+        openapi_url="/openapi.json" if settings.enable_docs else None,
     )
     application.middleware("http")(request_context_middleware)
     application.include_router(health.router, prefix=settings.api_prefix)
@@ -44,7 +59,7 @@ def create_app() -> FastAPI:
             request.url.path,
             exc.code,
         )
-        return _error_response(exc.status_code, exc.code, exc.message)
+        return _error_response(request, exc.status_code, exc.code, exc.message)
 
     @application.exception_handler(RequestValidationError)
     async def handle_validation_error(
@@ -56,7 +71,7 @@ def create_app() -> FastAPI:
         detail = str(first_error.get("msg", "请求参数校验失败"))
         message = f"{location}: {detail}" if location else detail
         logger.info("API validation failed: path=%s", request.url.path)
-        return _error_response(422, "validation_error", message)
+        return _error_response(request, 422, "validation_error", message)
 
     @application.exception_handler(StarletteHTTPException)
     async def handle_http_error(
@@ -68,12 +83,16 @@ def create_app() -> FastAPI:
             request.url.path,
             exc.status_code,
         )
-        return _error_response(exc.status_code, "http_error", str(exc.detail))
+        return _error_response(
+            request, exc.status_code, "http_error", str(exc.detail)
+        )
 
     @application.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled API error: path=%s", request.url.path)
-        return _error_response(500, "internal_error", "服务暂时无法完成请求。")
+        return _error_response(
+            request, 500, "internal_error", "服务暂时无法完成请求。"
+        )
 
     return application
 
