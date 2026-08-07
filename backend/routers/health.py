@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Response, status
-from sqlalchemy import text
 
 from backend.core.config import settings
 from backend.schemas.common import HealthResponse, ReadyResponse
@@ -38,6 +37,7 @@ def _alembic_head() -> str:
 def _current_revision(database_url: str) -> str:
     """Return the revision currently applied to the database."""
     from alembic.runtime.migration import MigrationContext
+
     from backend.storage.database import get_database_runtime
 
     runtime = get_database_runtime(database_url)

@@ -186,7 +186,9 @@ class TestRedisInvalidationUsesScanNotKeys:
     def test_invalidate_dataset_uses_scan_iter_not_keys(self) -> None:
         """Per-dataset invalidation must rely on SCAN, never blocking KEYS."""
         client = MagicMock()
-        client.scan_iter.return_value = iter(["ara:dev:v1:analytics:d1:aaa:summary:none"])
+        client.scan_iter.return_value = iter(
+            ["ara:dev:v1:analytics:d1:aaa:summary:none"]
+        )
         with patch("redis.Redis.from_url", return_value=client):
             cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
         cache.invalidate_dataset("d1")

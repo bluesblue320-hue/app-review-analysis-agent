@@ -100,14 +100,10 @@ class TestAiInsightsPayloadRedaction(unittest.TestCase):
             captured["json"] = json
             return FakeResponse()
 
-        with patch.dict(
-            os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=True
-        ):
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=True):
             ai_analysis.analyze_reviews(df, post_func=fake_post)
 
-        payload_text = json.dumps(
-            captured["json"], ensure_ascii=False
-        )
+        payload_text = json.dumps(captured["json"], ensure_ascii=False)
         assert "13800138000" not in payload_text
         assert "user@example.com" not in payload_text
         assert "110101199003078888" not in payload_text
@@ -131,9 +127,7 @@ class TestAiInsightsPayloadRedaction(unittest.TestCase):
             captured["json"] = json
             return FakeResponse()
 
-        with patch.dict(
-            os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=True
-        ):
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=True):
             ai_analysis.analyze_reviews(df, post_func=fake_post)
 
         messages = captured["json"]["messages"]

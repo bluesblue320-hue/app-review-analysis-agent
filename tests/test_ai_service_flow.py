@@ -11,16 +11,12 @@ Covers AiInsightService.generate():
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
-import pandas as pd
-
 from backend.core.exceptions import (
-    AiServiceError,
     InsightGenerationInProgressError,
 )
 from backend.schemas.ai import AiInsightsRequest
@@ -30,15 +26,12 @@ from backend.services.dataset_service import InMemoryDatasetStore
 from backend.services.insight_store import InMemoryInsightStore
 
 CSV_BYTES = (
-    "评分,内容,版本,时间\n"
-    "1,无故封号,2.0.0,2026-07-01\n"
-    "5,内容丰富,1.9.0,2026-07-02\n"
-).encode("utf-8")
+    "评分,内容,版本,时间\n1,无故封号,2.0.0,2026-07-01\n5,内容丰富,1.9.0,2026-07-02\n"
+).encode()
 
 
 def _fake_analysis(post_func=None):
     """Replace analyze_reviews with a controllable fake."""
-    from ai_analysis import analyze_reviews as _real
 
     def wrapper(df, **kwargs):
         return {
@@ -181,9 +174,7 @@ class TestConcurrentGeneration(unittest.TestCase):
         service = AiInsightService(
             self.store, self.insight_store, lock=InsightLock(cache)
         )
-        with patch(
-            "backend.services.ai_service.analyze_reviews", _fake_analysis()
-        ):
+        with patch("backend.services.ai_service.analyze_reviews", _fake_analysis()):
             result = service.generate(self._request())
         assert result.insight_id is not None
         assert result.insights["summary"] == "fake summary"

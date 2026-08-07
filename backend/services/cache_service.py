@@ -202,7 +202,7 @@ class InsightLease:
 
     def __init__(
         self,
-        lock: "InsightLock",
+        lock: InsightLock,
         key: str,
         token: str,
         acquired: bool,
@@ -212,7 +212,7 @@ class InsightLease:
         self.acquired = acquired
         self._lock = lock
 
-    def __enter__(self) -> "InsightLease":
+    def __enter__(self) -> InsightLease:
         return self
 
     def __exit__(self, *_exc) -> bool:

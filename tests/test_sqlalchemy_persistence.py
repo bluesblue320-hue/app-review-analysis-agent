@@ -74,9 +74,7 @@ def test_database_store_initialization_never_auto_creates(tmp_path) -> None:
     from backend.services.sqlalchemy_dataset_store import SqlAlchemyDatasetStore
 
     db_url = f"sqlite:///{tmp_path / 'noauto.db'}"
-    with patch(
-        "backend.storage.database.Base.metadata.create_all"
-    ) as create_all:
+    with patch("backend.storage.database.Base.metadata.create_all") as create_all:
         SqlAlchemyDatasetStore(db_url, create_schema=False)
         create_all.assert_not_called()
 
@@ -369,7 +367,9 @@ def test_refresh_expired_after_get_by_fingerprint_keeps_id(insight_store) -> Non
     assert refreshed.insights["summary"] == "新内容"
     assert refreshed.expires_at > datetime.now(UTC)
     # No expired content is served afterward.
-    assert insight_store.find_by_fingerprint(fingerprint).insights["summary"] == "新内容"
+    assert (
+        insight_store.find_by_fingerprint(fingerprint).insights["summary"] == "新内容"
+    )
 
 
 def test_cleanup_expired_insights_idempotent(insight_store) -> None:

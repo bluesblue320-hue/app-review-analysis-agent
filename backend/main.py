@@ -83,16 +83,12 @@ def create_app() -> FastAPI:
             request.url.path,
             exc.status_code,
         )
-        return _error_response(
-            request, exc.status_code, "http_error", str(exc.detail)
-        )
+        return _error_response(request, exc.status_code, "http_error", str(exc.detail))
 
     @application.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled API error: path=%s", request.url.path)
-        return _error_response(
-            request, 500, "internal_error", "服务暂时无法完成请求。"
-        )
+        return _error_response(request, 500, "internal_error", "服务暂时无法完成请求。")
 
     return application
 
