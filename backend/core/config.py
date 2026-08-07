@@ -37,6 +37,9 @@ class Settings:
     llm_max_tool_calls: int = 3
     agent_adapter: str = "direct"
     enable_docs: bool = True
+    # Alembic locations relative to the project root (ready-check migration).
+    alembic_config_path: str = "alembic.ini"
+    alembic_script_location: str = "alembic"
 
 
 def load_settings() -> Settings:
