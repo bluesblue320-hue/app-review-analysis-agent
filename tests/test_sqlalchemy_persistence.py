@@ -29,7 +29,7 @@ def sqlite_url(tmp_path) -> str:
 
 @pytest.fixture()
 def dataset_store(sqlite_url):
-    store = SqlAlchemyDatasetStore(sqlite_url)
+    store = SqlAlchemyDatasetStore(sqlite_url, create_schema=True)
     store.clear()
     yield store
     store.clear()
@@ -37,10 +37,48 @@ def dataset_store(sqlite_url):
 
 @pytest.fixture()
 def insight_store(sqlite_url):
-    store = SqlAlchemyInsightStore(sqlite_url)
+    store = SqlAlchemyInsightStore(sqlite_url, create_schema=True)
     store.clear()
     yield store
     store.clear()
+
+
+def test_create_schema_false_does_not_create_tables(tmp_path) -> None:
+    from sqlalchemy import inspect
+
+    db_url = f"sqlite:///{tmp_path / 'noschema.db'}"
+    runtime = get_database_runtime(db_url)  # create_schema defaults to False
+    inspector = inspect(runtime.engine)
+    assert "datasets" not in inspector.get_table_names()
+    assert "reviews" not in inspector.get_table_names()
+    assert "insights" not in inspector.get_table_names()
+
+
+def test_create_schema_true_initializes_sqlite(tmp_path) -> None:
+    from sqlalchemy import inspect
+
+    db_url = f"sqlite:///{tmp_path / 'schema.db'}"
+    runtime = get_database_runtime(db_url, create_schema=True)
+    inspector = inspect(runtime.engine)
+    assert {"datasets", "reviews", "insights"} <= set(inspector.get_table_names())
+
+
+def test_database_store_initialization_never_auto_creates(tmp_path) -> None:
+    """PostgreSQL-style store init must not call Base.metadata.create_all.
+
+    Production schema ownership belongs to Alembic; the store constructor
+    must not auto-create tables even on a fresh SQLite file.
+    """
+    from unittest.mock import patch
+
+    from backend.services.sqlalchemy_dataset_store import SqlAlchemyDatasetStore
+
+    db_url = f"sqlite:///{tmp_path / 'noauto.db'}"
+    with patch(
+        "backend.storage.database.Base.metadata.create_all"
+    ) as create_all:
+        SqlAlchemyDatasetStore(db_url, create_schema=False)
+        create_all.assert_not_called()
 
 
 def _csv_bytes() -> bytes:

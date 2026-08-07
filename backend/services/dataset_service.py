@@ -116,7 +116,13 @@ def _build_dataset_store():
     if settings.storage_backend == "database":
         from backend.services.sqlalchemy_dataset_store import SqlAlchemyDatasetStore
 
-        return SqlAlchemyDatasetStore(settings.database_url)
+        # SQLite dev convenience only: create the schema on demand because a
+        # local SQLite file has no Alembic deployment step. Production
+        # PostgreSQL never auto-creates; it must be migrated by Alembic.
+        create_schema = settings.database_url.startswith("sqlite")
+        return SqlAlchemyDatasetStore(
+            settings.database_url, create_schema=create_schema
+        )
     return InMemoryDatasetStore()
 
 

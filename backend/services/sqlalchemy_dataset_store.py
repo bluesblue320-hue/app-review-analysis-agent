@@ -38,8 +38,15 @@ from review_fields import (
 
 
 class SqlAlchemyDatasetStore:
-    def __init__(self, database_url: str | None = None) -> None:
-        self._runtime = get_database_runtime(database_url or settings.database_url)
+    def __init__(
+        self,
+        database_url: str | None = None,
+        *,
+        create_schema: bool = False,
+    ) -> None:
+        self._runtime = get_database_runtime(
+            database_url or settings.database_url, create_schema=create_schema
+        )
 
     def create(self, filename: str, content: bytes) -> DatasetRecord:
         raw, prepared, stats = parse_and_prepare_dataset(filename, content, settings)

@@ -236,7 +236,11 @@ def _build_insight_store():
     if settings.storage_backend == "database":
         from backend.services.sqlalchemy_insight_store import SqlAlchemyInsightStore
 
-        return SqlAlchemyInsightStore(settings.database_url)
+        # SQLite dev convenience only; PostgreSQL must be migrated by Alembic.
+        create_schema = settings.database_url.startswith("sqlite")
+        return SqlAlchemyInsightStore(
+            settings.database_url, create_schema=create_schema
+        )
     return InMemoryInsightStore()
 
 

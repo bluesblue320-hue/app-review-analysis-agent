@@ -21,8 +21,15 @@ from backend.storage.database import DatasetModel, InsightModel, get_database_ru
 
 
 class SqlAlchemyInsightStore:
-    def __init__(self, database_url: str | None = None) -> None:
-        self._runtime = get_database_runtime(database_url or settings.database_url)
+    def __init__(
+        self,
+        database_url: str | None = None,
+        *,
+        create_schema: bool = False,
+    ) -> None:
+        self._runtime = get_database_runtime(
+            database_url or settings.database_url, create_schema=create_schema
+        )
 
     def create(
         self,

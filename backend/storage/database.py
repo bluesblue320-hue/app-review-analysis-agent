@@ -104,7 +104,14 @@ class InsightModel(Base):
 
 
 class DatabaseRuntime:
-    def __init__(self, database_url: str) -> None:
+    """SQLAlchemy engine + session factory.
+
+    Schema creation is explicit: ``create_schema=True`` is only used for test
+    SQLite runtimes. Production PostgreSQL must be migrated by Alembic; the
+    runtime never calls ``Base.metadata.create_all`` implicitly.
+    """
+
+    def __init__(self, database_url: str, *, create_schema: bool = False) -> None:
         connect_args = (
             {"check_same_thread": False} if database_url.startswith("sqlite") else {}
         )
@@ -116,7 +123,8 @@ class DatabaseRuntime:
         )
         if database_url.startswith("sqlite"):
             event.listen(self.engine, "connect", _configure_sqlite)
-        Base.metadata.create_all(self.engine)
+        if create_schema:
+            Base.metadata.create_all(self.engine)
         self.session_factory = sessionmaker(
             bind=self.engine,
             expire_on_commit=False,
@@ -131,9 +139,11 @@ def _configure_sqlite(dbapi_connection, _connection_record) -> None:
     cursor.close()
 
 
-@lru_cache(maxsize=8)
-def get_database_runtime(database_url: str) -> DatabaseRuntime:
-    return DatabaseRuntime(database_url)
+@lru_cache(maxsize=16)
+def get_database_runtime(
+    database_url: str, *, create_schema: bool = False
+) -> DatabaseRuntime:
+    return DatabaseRuntime(database_url, create_schema=create_schema)
 
 
 def database_ready(engine: Engine) -> bool:
