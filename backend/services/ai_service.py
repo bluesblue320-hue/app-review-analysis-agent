@@ -55,11 +55,16 @@ class AiInsightService:
             request.filters.model_dump(),
             analysis_version=ANALYSIS_VERSION,
         )
+        ai_config = load_ai_config()
+        provider = ai_config["provider"]
+        model_name = ai_config["model"]
         fingerprint = compute_insight_fingerprint(
             dataset_id=request.dataset_id,
             scope_signature=scope_signature,
             sample_size=len(dataframe),
             analysis_version=ANALYSIS_VERSION,
+            provider=provider,
+            model_name=model_name,
         )
 
         existing = self._insight_store.find_by_fingerprint(fingerprint)
@@ -100,6 +105,8 @@ class AiInsightService:
                 sample_size=len(dataframe),
                 insights=insights,
                 analysis_version=ANALYSIS_VERSION,
+                provider=provider,
+                model_name=model_name,
             )
             return AiInsightsResponse(
                 insight_id=record.insight_id,

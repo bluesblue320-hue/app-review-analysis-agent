@@ -13,8 +13,8 @@ from backend.core.config import settings
 from backend.services.insight_store import InsightNotFoundError, InsightRecord
 from backend.services.repositories import (
     ANALYSIS_VERSION,
-    DEFAULT_MODEL,
-    DEFAULT_PROVIDER,
+    DEFAULT_AI_MODEL,
+    DEFAULT_AI_PROVIDER,
     compute_insight_fingerprint,
 )
 from backend.storage.database import DatasetModel, InsightModel, get_database_runtime
@@ -32,8 +32,8 @@ class SqlAlchemyInsightStore:
         sample_size: int,
         insights: dict,
         analysis_version: str = ANALYSIS_VERSION,
-        provider: str = DEFAULT_PROVIDER,
-        model_name: str = DEFAULT_MODEL,
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord:
         fingerprint = compute_insight_fingerprint(
             dataset_id=dataset_id,
@@ -76,8 +76,8 @@ class SqlAlchemyInsightStore:
         sample_size: int,
         insights: dict,
         analysis_version: str = ANALYSIS_VERSION,
-        provider: str = DEFAULT_PROVIDER,
-        model_name: str = DEFAULT_MODEL,
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord:
         """Atomic insert-or-get-existing keyed by fingerprint.
 
@@ -125,8 +125,8 @@ class SqlAlchemyInsightStore:
         *,
         fingerprint: str,
         insights: dict,
-        provider: str = DEFAULT_PROVIDER,
-        model_name: str = DEFAULT_MODEL,
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord:
         """Update an expired same-fingerprint record in place (no new row)."""
         now = datetime.now(UTC)

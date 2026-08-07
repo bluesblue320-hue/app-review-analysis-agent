@@ -18,8 +18,12 @@ from backend.services.dataset_service import DatasetRecord
 from backend.services.insight_store import InsightNotFoundError, InsightRecord
 
 ANALYSIS_VERSION = "v1"
-DEFAULT_PROVIDER = "deepseek"
-DEFAULT_MODEL = "deepseek-v4-flash"
+
+# Single source of truth for the default model configuration. All modules
+# (ai_analysis, insight stores, adapters, docs, compose) must reference these
+# constants instead of re-hardcoding provider/model names.
+DEFAULT_AI_PROVIDER = "deepseek"
+DEFAULT_AI_MODEL = "deepseek-v4-flash"
 
 
 @runtime_checkable
@@ -42,8 +46,8 @@ class InsightRepository(Protocol):
         sample_size: int,
         insights: dict[str, Any],
         analysis_version: str = ANALYSIS_VERSION,
-        provider: str = DEFAULT_PROVIDER,
-        model_name: str = DEFAULT_MODEL,
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord: ...
     def get(self, insight_id: str) -> InsightRecord: ...
     def resolve(
@@ -64,16 +68,16 @@ class InsightRepository(Protocol):
         sample_size: int,
         insights: dict[str, Any],
         analysis_version: str = ANALYSIS_VERSION,
-        provider: str = DEFAULT_PROVIDER,
-        model_name: str = DEFAULT_MODEL,
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord: ...
     def refresh_expired(
         self,
         *,
         fingerprint: str,
         insights: dict[str, Any],
-        provider: str = DEFAULT_PROVIDER,
-        model_name: str = DEFAULT_MODEL,
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord: ...
     def delete_dataset(self, dataset_id: str) -> None: ...
     def cleanup_expired(self) -> int: ...
@@ -154,8 +158,8 @@ def compute_insight_fingerprint(
     scope_signature: str,
     sample_size: int,
     analysis_version: str = ANALYSIS_VERSION,
-    provider: str = DEFAULT_PROVIDER,
-    model_name: str = DEFAULT_MODEL,
+    provider: str = DEFAULT_AI_PROVIDER,
+    model_name: str = DEFAULT_AI_MODEL,
 ) -> str:
     """Fixed-field-order fingerprint for the insights UNIQUE constraint."""
     payload = json.dumps(

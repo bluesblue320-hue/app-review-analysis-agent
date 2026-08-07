@@ -37,6 +37,22 @@ def redact_text(text: object) -> str:
     return normalized
 
 
+def redact_recursive(value: object) -> object:
+    """Recursively redact every string inside dict/list/tuple structures.
+
+    Non-string leaves (numbers, booleans, None) pass through unchanged so
+    aggregate statistics and ratings are never altered. This is the single
+    boundary used before any payload is sent to an external model.
+    """
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, dict):
+        return {key: redact_recursive(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_recursive(item) for item in value]
+    return value
+
+
 def redact_mapping(values: dict[str, object]) -> dict[str, object]:
     """Apply :func:`redact_text` to every string value of a mapping."""
     redacted: dict[str, object] = {}

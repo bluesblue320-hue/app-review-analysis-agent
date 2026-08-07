@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from backend.core.privacy import redact_recursive
 from review_fields import (
     CONTENT_COLUMN,
     RATING_COLUMN,
@@ -16,8 +17,6 @@ from review_fields import (
     VERSION_COLUMN,
 )
 
-DEFAULT_PROVIDER = "deepseek"
-DEFAULT_MODEL = "deepseek-v4-flash"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 REQUIRED_COLUMNS = REQUIRED_REVIEW_COLUMNS
 
@@ -43,11 +42,17 @@ def load_env_file(path=".env"):
 
 
 def load_ai_config():
+    from backend.services.repositories import (
+        DEFAULT_AI_MODEL,
+        DEFAULT_AI_PROVIDER,
+    )
+
     load_env_file()
     provider = (
-        os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
+        os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).strip().lower()
+        or DEFAULT_AI_PROVIDER
     )
-    model = os.getenv("AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    model = os.getenv("AI_MODEL", DEFAULT_AI_MODEL).strip() or DEFAULT_AI_MODEL
     return {
         "provider": provider,
         "model": model,
@@ -266,6 +271,9 @@ def call_deepseek(messages, config, post_func=requests.post, timeout=60):
 def analyze_reviews(df, post_func=requests.post, max_reviews=100):
     config = load_ai_config()
     review_packet = build_review_packet(df, max_reviews=max_reviews)
-    messages = build_messages(review_packet)
+    # Redact PII at the model-request boundary: the payload actually sent to
+    # DeepSeek must never contain raw phones/emails/IDs/bank cards.
+    safe_review_packet = redact_recursive(review_packet)
+    messages = build_messages(safe_review_packet)
     content = call_deepseek(messages, config, post_func=post_func)
     return normalize_insights(parse_json_content(content))

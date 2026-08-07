@@ -49,8 +49,10 @@ def _build_chat_model(
     if str(config.get("provider") or "") != "deepseek":
         raise LangChainUnavailableError("当前 AI_PROVIDER 不是 deepseek。")
 
+    from backend.services.repositories import DEFAULT_AI_MODEL
+
     return ChatDeepSeek(
-        model=str(config.get("model") or "deepseek-chat"),
+        model=str(config.get("model") or DEFAULT_AI_MODEL),
         api_key=api_key,
         base_url=str(config.get("base_url") or ""),
         timeout=timeout_seconds or 60,
