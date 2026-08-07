@@ -12,7 +12,6 @@ from backend.services.cache_service import (
     NullCache,
     RedisCache,
     analytics_cache_key,
-    dataset_keys_key,
     insight_lock_key,
     summary_cache_key,
 )
@@ -100,9 +99,9 @@ class TestCacheKeys:
         assert key.startswith("ara:")
         assert "d1" in key and "sig" in key and "insight_1" in key
 
-    def test_lock_and_dataset_keys_scoped(self) -> None:
+    def test_lock_key_scoped(self) -> None:
         assert insight_lock_key("d1", "sig").startswith("ara:")
-        assert dataset_keys_key("d1").endswith("dataset-keys:d1")
+        assert insight_lock_key("d1", "sig").endswith("d1:sig")
 
 
 class TestRedisCache:

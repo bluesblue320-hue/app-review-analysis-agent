@@ -625,13 +625,12 @@ Service 不直接依赖 redis-py。
 ```text
 ara:{env}:v1:analytics:{dataset_id}:{scope_signature}:{analysis_type}:{insight_id_or_none}
 ara:{env}:v1:lock:insight:{dataset_id}:{scope_signature}
-ara:{env}:v1:dataset-keys:{dataset_id}
 ```
 
 - `v1` 是缓存 Schema 版本。
 - `scope_signature` 已包含分析算法版本。
 - 默认分析 TTL 为 600 秒。
-- 不使用 Redis `KEYS` 扫描生产 keyspace。
+- 不使用 Redis `KEYS` 扫描生产 keyspace；按数据集失效使用 `SCAN`（低并发、单实例部署的当前选择），不维护数据集 key 索引集合。
 
 ### 8.3 读取顺序
 
@@ -647,8 +646,7 @@ ara:{env}:v1:dataset-keys:{dataset_id}
 
 ### 8.4 删除和失效
 
-- 写缓存时，将 cache key 加入数据集 key 索引集合并设置不短于缓存的 TTL。
-- 删除数据集时先提交 PostgreSQL 事务，再对索引集合中的 key 执行最佳努力删除。
+- 删除数据集时先提交 PostgreSQL 事务，再对 `ara:{env}:v1:analytics:{dataset_id}:*` 与 `ara:{env}:v1:lock:insight:{dataset_id}:*` 前缀用 `SCAN` 批量最佳努力删除（当前低并发单实例部署的选择；不使用阻塞式 `KEYS`，也不维护 key 索引集合）。
 - 缓存失效失败只记录安全日志；由于读取前验证数据库，旧缓存不可见，并会由 TTL 清理。
 - analysis version 改变后 scope signature 改变，不读取旧结果。
 
@@ -1117,7 +1115,7 @@ feat: persist datasets reviews and insights with PostgreSQL
 2. 按本文 Key 规范缓存摘要、版本、趋势、关键词和优先级。
 3. 读取缓存前验证 PostgreSQL 数据集存在性。
 4. 缓存值包含 schema version，且可严格 JSON 序列化。
-5. 实现数据集 key 索引和最佳努力失效，不使用 `KEYS`。
+5. 按数据集前缀 SCAN 实现最佳努力失效，不使用 `KEYS`，不维护 key 索引集合。
 6. 实现 Insight 原子短锁、token 安全释放和自动 TTL；锁只用于减少重复模型调用，不承担数据唯一性。
 7. 获取锁前按 `insight_fingerprint` 查询 PostgreSQL，获得锁后再次查询；命中未过期记录则不调用模型。
 8. Redis get/set/delete/lock 异常全部降级，由 PostgreSQL 唯一约束和 insert-or-get-existing 继续保证不产生重复 Insight 行。

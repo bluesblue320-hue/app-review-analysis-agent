@@ -17,7 +17,7 @@
 2. 按 Key 规范缓存摘要（`ara:{env}:v1:analytics:{dataset_id}:{scope_signature}:{analysis_type}:{insight_id_or_none}`）。
 3. 读取缓存前验证 PostgreSQL 数据集存在性。
 4. 缓存值包含 schema version，且严格 JSON 序列化。
-5. 数据集 key 索引 + 最佳努力失效，不使用 `KEYS`。
+5. 按数据集前缀 SCAN 最佳努力失效，不使用 `KEYS`（低并发单实例场景选择 SCAN 而非维护 key 索引集）。
 6. Insight 原子短锁：token 安全释放、自动 TTL；锁只减少重复模型调用，不承担数据唯一性。
 7. 获取锁前按 `insight_fingerprint` 查询 PostgreSQL，获得锁后再次查询；命中未过期记录则不调用模型。
 8. Redis get/set/delete/lock 异常全部降级；由 PostgreSQL 唯一约束和 insert-or-get-existing 继续保证不产生重复 Insight 行。
@@ -40,7 +40,7 @@
 ## 主要实现
 
 1. **Cache 三实现**：`NullCache`（无 Redis 时 no-op）、`MemoryCache`（线程安全、TTL、测试/本地）、`RedisCache`（decode_responses、异常全部吞掉返回 None/继续）。`build_cache` 按 Redis URL > Memory > Null 选择。
-2. **Key 规范**：`ara:{env}:v1:analytics:{dataset_id}:{scope_signature}:{analysis_type}:{insight_id}`；`ara:{env}:v1:lock:insight:{dataset_id}:{scope_signature}`；`ara:{env}:v1:dataset-keys:{dataset_id}`。不使用 `KEYS`（scan_iter + count 批次）。
+2. **Key 规范**：`ara:{env}:v1:analytics:{dataset_id}:{scope_signature}:{analysis_type}:{insight_id}`；`ara:{env}:v1:lock:insight:{dataset_id}:{scope_signature}`。不使用 `KEYS`（scan_iter + count 批次），不维护数据集 key 索引集。
 3. **缓存值 schema version**：`{"schema_version": 1, "payload": {...}}`，版本不匹配视为 miss。
 4. **失效**：`invalidate_dataset` 用 scan_iter 按数据集前缀批量删除缓存与锁；Redis 异常降级为尽力而为。
 5. **Insight 短锁**：`InsightLock.acquire` Redis 用 `SET key token NX EX ttl` 原子抢占；token 安全释放用 WATCH/MULTI 校验 token 一致才 DEL；MemoryCache 用 `_entries` + monotonic TTL 模拟；NullCache 直通（靠数据库约束兜底）。锁只做成本优化，不承诺消除所有重复调用。

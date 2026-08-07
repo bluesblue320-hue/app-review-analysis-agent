@@ -152,6 +152,14 @@ class RedisCache:
             )
 
     def invalidate_dataset(self, dataset_id: str) -> None:
+        """Best-effort per-dataset invalidation using SCAN.
+
+        Current deployment is low-concurrency, single-instance, so scanning
+        keys by dataset prefix (``scan_iter`` with a batch count) is the
+        chosen strategy. Blocking ``KEYS`` is never used. Errors degrade to
+        a no-op (stale cache entries are harmless because reads validate
+        dataset existence first).
+        """
         try:
             keys = list(
                 self._client.scan_iter(
@@ -303,10 +311,6 @@ def analytics_cache_key(
 
 def insight_lock_key(dataset_id: str, scope_signature: str) -> str:
     return f"ara:{_env_tag()}:v1:lock:insight:{dataset_id}:{scope_signature}"
-
-
-def dataset_keys_key(dataset_id: str) -> str:
-    return f"ara:{_env_tag()}:v1:dataset-keys:{dataset_id}"
 
 
 def _env_tag() -> str:

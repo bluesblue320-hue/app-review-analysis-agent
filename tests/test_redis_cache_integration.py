@@ -180,3 +180,32 @@ class TestCacheSerialization:
         cache.set("k", {"nested": {"list": [1, 2, 3]}, "flag": True}, ttl_seconds=60)
         encoded = json.dumps(cache.get("k"), ensure_ascii=False)
         assert isinstance(encoded, str)
+
+
+class TestRedisInvalidationUsesScanNotKeys:
+    def test_invalidate_dataset_uses_scan_iter_not_keys(self) -> None:
+        """Per-dataset invalidation must rely on SCAN, never blocking KEYS."""
+        client = MagicMock()
+        client.scan_iter.return_value = iter(["ara:dev:v1:analytics:d1:aaa:summary:none"])
+        with patch("redis.Redis.from_url", return_value=client):
+            cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
+        cache.invalidate_dataset("d1")
+        # scan_iter used; blocking keys() must not be called.
+        client.scan_iter.assert_called()
+        client.keys.assert_not_called()
+        client.delete.assert_called_once()
+
+    def test_invalidate_dataset_with_no_matches_is_safe(self) -> None:
+        client = MagicMock()
+        client.scan_iter.return_value = iter([])
+        with patch("redis.Redis.from_url", return_value=client):
+            cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
+        cache.invalidate_dataset("d1")  # no error, no delete call
+        client.delete.assert_not_called()
+
+    def test_invalidate_dataset_degrades_on_scan_error(self) -> None:
+        client = MagicMock()
+        client.scan_iter.side_effect = RuntimeError("redis down")
+        with patch("redis.Redis.from_url", return_value=client):
+            cache = RedisCache("redis://localhost:6379/0", ttl_seconds=60)
+        cache.invalidate_dataset("d1")  # must not raise
