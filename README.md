@@ -190,8 +190,8 @@ python -m evaluation.backup_drill --database-url postgresql+psycopg2://app:app@l
 
 ### 当前基线（仓库内可复现）
 
-- 完整 pytest：**340 passed + 3 subtests**。
-- 全项目覆盖率：**82.76%**（阶段 5 实测；CI Linux 以 80% 硬门禁复核）。
+- 完整 pytest：**379 passed + 3 subtests**。
+- 全项目覆盖率：最新 CI Linux 基线为 **90.02%**，硬门禁保持 **80%**。
 - Agent Mock 评估：**Direct 46/46、LangChain 46/46**。
 - 性能（10,000 行 × 3 次，`evaluation/reports/perf/benchmark.json`）：上传 P95 24.8s、预热摘要 P95 56ms、分页 P95 2.6ms、规则 Agent P95 188ms。
 - 故障演练 6/6 通过（`evaluation/reports/failure-drill/report.json`）。
@@ -223,7 +223,7 @@ python -m evaluation.backup_drill --database-url postgresql+psycopg2://app:app@l
 ## 已知限制
 
 - 本地默认使用 SQLite + 内存缓存（`STORAGE_BACKEND` 默认按 `APP_ENV` 选择）；生产必须配置 PostgreSQL。
-- LangChain 依赖锁定 `langchain-core==0.3.60` 组合（规避 `uuid_utils` 原生扩展在受控系统的加载问题），升级需在 CI 验证。
+- LangChain 依赖当前 CI 验证组合：`langchain-core==0.3.70`、`langchain-deepseek==0.1.4`、`langchain-openai==0.3.28`、`langsmith==0.3.45`（与 `pyproject.toml` 一致；升级版本以 `pyproject.toml` 为事实来源并在 CI 验证）。
 - Windows 开发机全量 coverage 偶发 Segfault（pandas/jieba 原生扩展与 coverage 追踪器冲突）；CI Linux 为最终覆盖验收环境。
 - Live 评估需要 `DEEPSEEK_API_KEY`，结果随模型波动，不作为普通 PR CI 门禁。
 - 上传真实用户评论前请确认数据授权、隐私与合规要求；部分工具结果或评论样本可能发送到模型服务。
