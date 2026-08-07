@@ -13,8 +13,8 @@
 
 ## 本阶段目标
 
-1. 新增 `AgentModelAdapter` 统一接口，Direct 与 LangChain 双实现，共享同一 Orchestrator（可回答性判断、规则快速路由、最多三次有界工具循环、工具白名单、Pydantic 参数校验、工具证据收集、PII 脱敏、结构化回答校验、数字与绝对结论校验、规则降级、Tool Trace）。
-2. LangChain Adapter 使用 `ChatDeepSeek.bind_tools`，由共享 Orchestrator 控制有界循环（不采用 LangChain Agent Executor）。
+1. 新增 `AgentModelAdapter` 统一接口，Direct 与 LangChain 双实现，共享同一 Orchestrator（可回答性判断、规则快速路由、单次规划最多选择 3 个只读分析工具、工具白名单、Pydantic 参数校验、工具证据收集、PII 脱敏、结构化回答校验、数字与绝对结论校验、规则降级、Tool Trace）。
+2. LangChain Adapter 使用 `ChatDeepSeek.bind_tools`，由共享 Orchestrator 控制单次规划（一次规划选择工具 → 执行 → 一次合成，不采用 LangChain Agent Executor，非多轮 Loop）。
 3. 配置 `AGENT_ADAPTER=direct|langchain` 运行时切换。
 4. 双 Adapter Mock 固定 46/46（确定性回归门禁）。
 5. 全项目覆盖率从 70% 提升到 75% 并固定为门禁。
@@ -47,7 +47,7 @@
 1. **统一 Adapter 契约**：`AgentModelAdapter` 只负责 `plan_tools`（一次模型往返规划工具调用）与 `synthesize`（一次模型往返生成结构化回答）；业务分析全部由共享 `ToolExecutor` 在 Orchestrator 控制下执行。
 2. **Direct Adapter**：薄包装既有 `DeepSeekToolClient`，模型行为零变化，默认 `AGENT_ADAPTER=direct` 保持线上行为完全一致，可回退。
 3. **LangChain Adapter**：`ChatDeepSeek`（deepseek-chat、temperature 0.1、json_object 输出），`bind_tools` + 单轮规划；工具调用规范化到共享 dict 结构；JSON 结构化输出由服务端统一二次校验（数字可信度、绝对结论、证据 ID）。
-4. **共享 Orchestrator**：工具白名单、最多 3 次有界循环、Pydantic 参数校验、PII 脱敏、规则降级全部保留在原 `ControlledToolCallingAgent`，仅替换模型交互层。
+4. **共享 Orchestrator**：工具白名单、单次规划最多选择 3 个只读分析工具、Pydantic 参数校验、PII 脱敏、规则降级全部保留在原 `ControlledToolCallingAgent`，仅替换模型交互层。
 5. **环境适配**：系统"应用程序控制策略"阻止 `uuid_utils`（langchain-core 0.3.60 及以上版本依赖的 Rust 扩展）加载；将 langchain 依赖锁定到 0.3.60 组合（langsmith 0.1.147），规避该问题并在 pyproject 固定。
 
 ## 实际运行的命令与结果
@@ -99,8 +99,8 @@
 - [x] 全项目覆盖率 75.53% >= 75% 门禁
 - [x] Direct Mock 46/46
 - [x] LangChain Mock 46/46
-- [x] 双 Adapter 共享 Orchestrator、最多 3 次有界循环
-- [x] LangChain 不使用 Agent Executor（bind_tools + 自管有界循环）
+- [x] 双 Adapter 共享 Orchestrator、单次规划最多选择 3 个只读分析工具
+- [x] LangChain 不使用 Agent Executor（bind_tools + 单次规划工具选择）
 - [x] `AGENT_ADAPTER` 运行时切换
 - [x] LangChain 结构化输出解析后经统一服务端证据/数字/结论校验
 - [x] 新增 Adapter 代码覆盖率 >= 80%（direct 90%、langchain 97%）

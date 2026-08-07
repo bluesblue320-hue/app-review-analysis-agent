@@ -16,14 +16,12 @@ import pandas as pd
 from backend.core.exceptions import DatasetNotFoundError
 from backend.services.dataset_service import DatasetRecord
 from backend.services.insight_store import InsightNotFoundError, InsightRecord
+from backend.services.model_config import (
+    DEFAULT_AI_MODEL,
+    DEFAULT_AI_PROVIDER,
+)
 
 ANALYSIS_VERSION = "v1"
-
-# Single source of truth for the default model configuration. All modules
-# (ai_analysis, insight stores, adapters, docs, compose) must reference these
-# constants instead of re-hardcoding provider/model names.
-DEFAULT_AI_PROVIDER = "deepseek"
-DEFAULT_AI_MODEL = "deepseek-v4-flash"
 
 
 @runtime_checkable

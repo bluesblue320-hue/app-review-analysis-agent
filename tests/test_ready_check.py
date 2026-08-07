@@ -28,7 +28,9 @@ class TestReadyResponseSchema(unittest.TestCase):
         }
 
     def test_schema_rejects_unknown_fields(self) -> None:
-        with self.assertRaises(Exception):
+        from pydantic import ValidationError
+
+        with self.assertRaises(ValidationError):
             ReadyResponse(  # type: ignore[call-arg]
                 status="ok",
                 service="x",
@@ -44,11 +46,16 @@ class TestReadyCheckMemoryBackend(unittest.TestCase):
         from backend.core.config import Settings
 
         base = Settings()
-        return Settings(**{**{
-            "service_name": base.service_name,
-            "storage_backend": "memory",
-            "database_url": base.database_url,
-        }, **overrides})
+        return Settings(
+            **{
+                **{
+                    "service_name": base.service_name,
+                    "storage_backend": "memory",
+                    "database_url": base.database_url,
+                },
+                **overrides,
+            }
+        )
 
     def _call(self):
         from fastapi.testclient import TestClient
@@ -60,10 +67,11 @@ class TestReadyCheckMemoryBackend(unittest.TestCase):
 
     def test_memory_backend_ready_ok(self) -> None:
         mock_settings = self._settings()
-        with patch(
-            "backend.routers.health.settings", mock_settings
-        ), patch(
-            "backend.services.cache_service.cache_service.ready", return_value=True
+        with (
+            patch("backend.routers.health.settings", mock_settings),
+            patch(
+                "backend.services.cache_service.cache_service.ready", return_value=True
+            ),
         ):
             response = self._call()
         assert response.status_code == 200
@@ -75,10 +83,11 @@ class TestReadyCheckMemoryBackend(unittest.TestCase):
 
     def test_memory_backend_redis_degraded(self) -> None:
         mock_settings = self._settings()
-        with patch(
-            "backend.routers.health.settings", mock_settings
-        ), patch(
-            "backend.services.cache_service.cache_service.ready", return_value=False
+        with (
+            patch("backend.routers.health.settings", mock_settings),
+            patch(
+                "backend.services.cache_service.cache_service.ready", return_value=False
+            ),
         ):
             response = self._call()
         assert response.status_code == 200
@@ -91,11 +100,16 @@ class TestReadyCheckDatabaseBackend(unittest.TestCase):
         from backend.core.config import Settings
 
         base = Settings()
-        return Settings(**{**{
-            "service_name": base.service_name,
-            "storage_backend": "database",
-            "database_url": "sqlite:///./data/ready.db",
-        }, **overrides})
+        return Settings(
+            **{
+                **{
+                    "service_name": base.service_name,
+                    "storage_backend": "database",
+                    "database_url": "sqlite:///./data/ready.db",
+                },
+                **overrides,
+            }
+        )
 
     def _call(self):
         from fastapi.testclient import TestClient
@@ -106,15 +120,19 @@ class TestReadyCheckDatabaseBackend(unittest.TestCase):
         return client.get("/api/v1/ready")
 
     def test_database_connected_head_ok(self) -> None:
-        with patch("backend.routers.health.settings", self._settings()), patch(
-            "backend.services.dataset_service.dataset_store.ready",
-            return_value=True,
-        ), patch(
-            "backend.routers.health._alembic_head", return_value="aeb4cbb3b3b2"
-        ), patch(
-            "backend.routers.health._current_revision", return_value="aeb4cbb3b3b2"
-        ), patch(
-            "backend.services.cache_service.cache_service.ready", return_value=True
+        with (
+            patch("backend.routers.health.settings", self._settings()),
+            patch(
+                "backend.services.dataset_service.dataset_store.ready",
+                return_value=True,
+            ),
+            patch("backend.routers.health._alembic_head", return_value="aeb4cbb3b3b2"),
+            patch(
+                "backend.routers.health._current_revision", return_value="aeb4cbb3b3b2"
+            ),
+            patch(
+                "backend.services.cache_service.cache_service.ready", return_value=True
+            ),
         ):
             response = self._call()
         assert response.status_code == 200
@@ -123,9 +141,12 @@ class TestReadyCheckDatabaseBackend(unittest.TestCase):
         assert response.json()["migration"] == "head"
 
     def test_database_unavailable_503(self) -> None:
-        with patch("backend.routers.health.settings", self._settings()), patch(
-            "backend.services.dataset_service.dataset_store.ready",
-            return_value=False,
+        with (
+            patch("backend.routers.health.settings", self._settings()),
+            patch(
+                "backend.services.dataset_service.dataset_store.ready",
+                return_value=False,
+            ),
         ):
             response = self._call()
         assert response.status_code == 503
@@ -133,13 +154,14 @@ class TestReadyCheckDatabaseBackend(unittest.TestCase):
         assert response.json()["database"] == "error"
 
     def test_migration_behind_503(self) -> None:
-        with patch("backend.routers.health.settings", self._settings()), patch(
-            "backend.services.dataset_service.dataset_store.ready",
-            return_value=True,
-        ), patch(
-            "backend.routers.health._alembic_head", return_value="aeb4cbb3b3b2"
-        ), patch(
-            "backend.routers.health._current_revision", return_value="old-rev"
+        with (
+            patch("backend.routers.health.settings", self._settings()),
+            patch(
+                "backend.services.dataset_service.dataset_store.ready",
+                return_value=True,
+            ),
+            patch("backend.routers.health._alembic_head", return_value="aeb4cbb3b3b2"),
+            patch("backend.routers.health._current_revision", return_value="old-rev"),
         ):
             response = self._call()
         assert response.status_code == 503
@@ -147,15 +169,19 @@ class TestReadyCheckDatabaseBackend(unittest.TestCase):
         assert response.json()["migration"] == "behind"
 
     def test_database_ready_redis_degraded(self) -> None:
-        with patch("backend.routers.health.settings", self._settings()), patch(
-            "backend.services.dataset_service.dataset_store.ready",
-            return_value=True,
-        ), patch(
-            "backend.routers.health._alembic_head", return_value="aeb4cbb3b3b2"
-        ), patch(
-            "backend.routers.health._current_revision", return_value="aeb4cbb3b3b2"
-        ), patch(
-            "backend.services.cache_service.cache_service.ready", return_value=False
+        with (
+            patch("backend.routers.health.settings", self._settings()),
+            patch(
+                "backend.services.dataset_service.dataset_store.ready",
+                return_value=True,
+            ),
+            patch("backend.routers.health._alembic_head", return_value="aeb4cbb3b3b2"),
+            patch(
+                "backend.routers.health._current_revision", return_value="aeb4cbb3b3b2"
+            ),
+            patch(
+                "backend.services.cache_service.cache_service.ready", return_value=False
+            ),
         ):
             response = self._call()
         assert response.status_code == 200
@@ -164,12 +190,16 @@ class TestReadyCheckDatabaseBackend(unittest.TestCase):
         assert response.json()["migration"] == "head"
 
     def test_migration_check_failure_503(self) -> None:
-        with patch("backend.routers.health.settings", self._settings()), patch(
-            "backend.services.dataset_service.dataset_store.ready",
-            return_value=True,
-        ), patch(
-            "backend.routers.health._alembic_head",
-            side_effect=RuntimeError("alembic broken"),
+        with (
+            patch("backend.routers.health.settings", self._settings()),
+            patch(
+                "backend.services.dataset_service.dataset_store.ready",
+                return_value=True,
+            ),
+            patch(
+                "backend.routers.health._alembic_head",
+                side_effect=RuntimeError("alembic broken"),
+            ),
         ):
             response = self._call()
         assert response.status_code == 503

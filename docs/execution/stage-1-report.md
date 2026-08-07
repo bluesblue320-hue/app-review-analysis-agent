@@ -119,4 +119,4 @@ Mock 固定评估 **46/46**，`routing_accuracy`、`tool_exact_match_rate`、`il
 ## 下一阶段输入条件
 
 - 阶段 2 可开始。依赖：CP1 通过、AgentAnswer/Guardrail/PII/鉴权/CI 稳定、覆盖率 70% 门禁。
-- 阶段 2 目标：Direct/LangChain 双 Adapter（共享 Orchestrator、最多 3 次有界循环）、双 Adapter Mock 46/46、覆盖率 75%、首次 Live 对比。
+- 阶段 2 目标：Direct/LangChain 双 Adapter（共享 Orchestrator、单次规划最多选择 3 个只读分析工具）、双 Adapter Mock 46/46、覆盖率 75%、首次 Live 对比。

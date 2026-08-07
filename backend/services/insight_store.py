@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from backend.core.config import settings
+from backend.services.model_config import DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER
 
 INSIGHT_NOT_FOUND_WARNING = "指定的 AI 洞察不存在，未使用 AI 洞察。"
 INSIGHT_SCOPE_MISMATCH_WARNING = "当前数据范围与指定 AI 洞察不一致，旧洞察未被使用。"
@@ -60,8 +61,8 @@ class InMemoryInsightStore:
         sample_size: int,
         insights: dict[str, Any],
         analysis_version: str = "v1",
-        provider: str = "deepseek",
-        model_name: str = "deepseek-v4-flash",
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord:
         fingerprint = self._fingerprint_for(
             dataset_id=dataset_id,
@@ -116,8 +117,8 @@ class InMemoryInsightStore:
         sample_size: int,
         insights: dict[str, Any],
         analysis_version: str = "v1",
-        provider: str = "deepseek",
-        model_name: str = "deepseek-v4-flash",
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord:
         with self._lock:
             existing = self.find_by_fingerprint(fingerprint)
@@ -142,8 +143,8 @@ class InMemoryInsightStore:
         *,
         fingerprint: str,
         insights: dict[str, Any],
-        provider: str = "deepseek",
-        model_name: str = "deepseek-v4-flash",
+        provider: str = DEFAULT_AI_PROVIDER,
+        model_name: str = DEFAULT_AI_MODEL,
     ) -> InsightRecord:
         with self._lock:
             insight_id = self._fingerprints.get(fingerprint)

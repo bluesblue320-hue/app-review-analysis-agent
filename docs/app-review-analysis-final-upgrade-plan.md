@@ -167,8 +167,8 @@ flowchart TD
 ### 4.1 LangChain 接入方式
 
 - 使用 `langchain-deepseek` 的 `ChatDeepSeek`。
-- 模型固定为 `deepseek-chat`，不使用不支持工具调用和结构化输出的 reasoning 模型。
-- 使用 `bind_tools` 和自行维护的有界消息循环，不使用 LangChain `create_agent`。
+- 模型默认与全局 `AI_MODEL` 配置一致（单一事实来源 `DEFAULT_AI_MODEL`），不使用不支持工具调用和结构化输出的 reasoning 模型。
+- 使用 `bind_tools` 的单次规划：一次模型调用选择工具 → 执行 → 一次合成；不使用 LangChain `create_agent`，也不实现多轮 Agent Loop。
 - 单次请求最多成功或尝试执行 3 个工具，达到上限后进入合成或降级。
 - LangChain Adapter 与 Direct Adapter 使用同一工具白名单、参数 Schema、ToolExecutor、Guardrail 和结果类型。
 - 固定 LangChain 及集成包版本；升级版本时同时运行 Direct/LangChain 契约测试和固定评估。
@@ -944,7 +944,7 @@ fix: complete agent reliability data validation and security baseline
 2. 将现有 DeepSeek Client 包装为 `DirectDeepSeekAdapter`，不改变现有行为。
 3. 使用 `ChatDeepSeek.bind_tools` 实现 `LangChainDeepSeekAdapter`。
 4. 以现有 ToolExecutor 包装八个 LangChain Tool，复用参数 Schema。
-5. 实现最多三次的手工有界循环，不调用 `create_agent`。
+5. 实现单次规划（一次模型调用选择工具 → 执行 → 一次合成），单次请求最多选择 3 个只读工具，不调用 `create_agent`，不做多轮 Agent Loop。
 6. LangChain 结构化输出解析后，再经过统一服务端证据、数字和结论校验。
 7. 增加 `AGENT_ADAPTER=direct|langchain` 配置，默认 direct。
 8. 扩展评估 CLI 的 `--adapter direct|langchain`。
@@ -1469,7 +1469,7 @@ Live 对比固定 15～20 个代表性案例，两个 Adapter 各运行 3 次，
 DirectDeepSeekAdapter 与 LangChainDeepSeekAdapter
 8 个共享确定性只读工具
 Pydantic 请求、工具参数和 AgentAnswer 校验
-最多 3 次的受控工具循环
+单次规划最多选择 3 个只读工具（一次规划 → 执行 → 一次合成，非多轮 Agent Loop）
 不可回答问题处理
 evidence_call_ids 证据引用
 数字与无证据绝对结论校验

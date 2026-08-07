@@ -36,7 +36,7 @@
                  ├─ Insight Repository（fingerprint 去重 + 唯一约束）
                  ├─ 确定性分析（评分过滤、情绪、关键词、趋势、优先级）
                  ├─ Redis 缓存（分析摘要）+ Insight 短锁（减少重复模型调用）
-                 └─ 受控 Agent（双 Adapter，最多 3 次有界工具循环）
+                 └─ 受控 Agent（双 Adapter，单次规划最多选择 3 个只读分析工具）
 
 共享业务层
   ├─ review_preprocessing.py   # 清洗、分词、情绪
@@ -54,7 +54,7 @@
 | 2 | 服务端范围签名 | `sha256(content_hash + canonical_filters + analysis_version)` |
 | 3 | Insight fingerprint | 固定字段顺序 SHA-256，数据库 `UNIQUE` 保证最终单条记录 |
 | 4 | 原子 insert-or-get-existing | 唯一约束冲突回滚后读取已有记录，不返回 500 |
-| 5 | 受控 Tool Calling | 白名单 + Pydantic 参数校验 + 最多 3 次有界循环 |
+| 5 | 受控 Tool Calling | 白名单 + Pydantic 参数校验 + 单次规划最多选择 3 个只读工具 |
 | 6 | 回答可信度校验 | 数字须有工具证据；绝对结论受 Guardrail 约束 |
 | 7 | 规则降级 | 模型未配置/超时/非法工具/校验失败 → 原规则工作流 |
 | 8 | PII 脱敏 | 构造模型消息前统一替换手机/邮箱/身份证/银行卡 |

@@ -26,6 +26,8 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
+from backend.services.model_config import DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER
+
 
 class Base(DeclarativeBase):
     pass
@@ -93,8 +95,8 @@ class InsightModel(Base):
     scope_signature: Mapped[str] = mapped_column(String(64), index=True)
     sample_size: Mapped[int] = mapped_column(Integer)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON)
-    provider: Mapped[str] = mapped_column(String(50), default="deepseek")
-    model_name: Mapped[str] = mapped_column(String(100), default="deepseek-v4-flash")
+    provider: Mapped[str] = mapped_column(String(50), default=DEFAULT_AI_PROVIDER)
+    model_name: Mapped[str] = mapped_column(String(100), default=DEFAULT_AI_MODEL)
     analysis_version: Mapped[str] = mapped_column(String(32), default="v1")
     insight_fingerprint: Mapped[str] = mapped_column(
         String(64), unique=True, index=True
