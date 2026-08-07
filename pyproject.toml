@@ -37,6 +37,8 @@ dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
     "ruff==0.16.1",
+    "psycopg2-binary>=2.9,<3",
+    "redis>=5,<9",
 ]
 
 [tool.setuptools]

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.git/
+.gitignore
+.pytest_cache/
+.coverage
+coverage.xml
+data/
+*.db
+*.sqlite
+evaluation/reports/
+tests/
+docs/
+streamlit-*.log
+*.html
+*.csv

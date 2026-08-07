@@ -40,6 +40,7 @@ class NullCache:
 
     def delete(self, _key: str) -> None:
         return None
+
     def invalidate_dataset(self, _dataset_id: str) -> None:
         return None
 
@@ -119,13 +120,17 @@ class RedisCache:
                 json.dumps(value, ensure_ascii=False),
             )
         except Exception as exc:
-            logger.warning("Redis cache write failed: error_type=%s", type(exc).__name__)
+            logger.warning(
+                "Redis cache write failed: error_type=%s", type(exc).__name__
+            )
 
     def delete(self, key: str) -> None:
         try:
             self._client.delete(key)
         except Exception as exc:
-            logger.warning("Redis cache delete failed: error_type=%s", type(exc).__name__)
+            logger.warning(
+                "Redis cache delete failed: error_type=%s", type(exc).__name__
+            )
 
     def invalidate_dataset(self, dataset_id: str) -> None:
         try:

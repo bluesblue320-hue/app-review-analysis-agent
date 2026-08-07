@@ -1,0 +1,28 @@
+# FastAPI backend image
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=production
+
+WORKDIR /app
+
+# System deps for pandas/numpy wheels and healthchecks
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md ./
+COPY backend ./backend
+COPY frontend ./frontend
+COPY review_fields.py review_preprocessing.py visual_analysis.py intent_router.py nlp_analysis.py agent_workflow.py ai_analysis.py ./
+COPY alembic.ini ./
+COPY alembic ./alembic
+
+RUN pip install --no-cache-dir -e ".[langchain]" \
+    && pip install --no-cache-dir psycopg2-binary redis
+
+EXPOSE 8000
+
+# FastAPI fixed single worker (no Gunicorn multi-process; one Uvicorn worker).
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

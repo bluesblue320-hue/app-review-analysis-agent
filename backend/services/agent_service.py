@@ -55,6 +55,18 @@ class AgentService:
             ai_insights=matched_insights,
             scope_label=scope_label,
         )
+        from backend.core.audit_log import log_event
+
+        adapter = getattr(self._agent, "_adapter", None)
+        log_event(
+            "agent_query",
+            dataset_id=request.dataset_id,
+            routing=result.routing,
+            adapter=getattr(adapter, "name", "unknown"),
+            tool_calls=len(result.tool_calls),
+            sample_size=int(len(dataframe)),
+            scope_signature=scope_signature,
+        )
         return AgentQueryResponse(
             intent=result.intent,
             answer=result.answer,

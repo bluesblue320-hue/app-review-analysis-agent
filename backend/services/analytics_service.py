@@ -79,6 +79,13 @@ class AnalyticsService:
         )
         cached = self._cache.get(cache_key)
         if cached is not None and _valid_cache_payload(cached):
+            from backend.core.audit_log import log_event
+
+            log_event(
+                "analytics_cache_hit",
+                dataset_id=request.dataset_id,
+                analysis_type="summary",
+            )
             return AnalyticsSummaryResponse.model_validate(cached["payload"])
         current_insights, insight_warning = self._insight_store.resolve(
             insight_id=request.insight_id,

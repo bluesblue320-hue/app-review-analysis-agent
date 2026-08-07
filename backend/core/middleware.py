@@ -30,6 +30,9 @@ async def request_context_middleware(request: Request, call_next):
         else uuid4().hex
     )
     request.state.request_id = request_id
+    from backend.core.audit_log import set_request_id
+
+    set_request_id(request_id)
     started = time.perf_counter()
 
     if request.url.path not in PUBLIC_PATHS and not bearer_token_is_valid(
