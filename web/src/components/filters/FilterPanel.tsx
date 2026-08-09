@@ -3,6 +3,15 @@ import { useState } from "react";
 
 import { DEFAULT_FILTERS, type Filters } from "../../types/api";
 
+function initialDraft(filters: Filters, categories: string[]): Filters {
+  if (categories.length === 0) return filters;
+  const available = new Set(categories);
+  return {
+    ...filters,
+    categories: filters.categories.filter((category) => available.has(category)),
+  };
+}
+
 export function FilterPanel({
   filters,
   categories,
@@ -14,7 +23,7 @@ export function FilterPanel({
   onApply: (filters: Filters) => void;
   disabled?: boolean;
 }) {
-  const [draft, setDraft] = useState(filters);
+  const [draft, setDraft] = useState(() => initialDraft(filters, categories));
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -36,10 +45,19 @@ export function FilterPanel({
         <div>
           <p className="field-label">问题类型</p>
           <div className="mt-2 max-h-40 space-y-2 overflow-auto pr-1">
-            {categories.length === 0 && <p className="text-xs text-slate-600">上传后自动载入类别</p>}
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" className="accent-teal-400" checked={draft.categories.length === 0} onChange={() => update("categories", [])} />
+              全部问题类型
+            </label>
+            {categories.length === 0 && <p className="pl-6 text-xs text-slate-600">当前数据集暂无可选类别</p>}
             {categories.map((category) => (
               <label key={category} className="flex cursor-pointer items-center gap-2 text-sm text-slate-400">
-                <input type="checkbox" className="accent-teal-400" checked={draft.categories.includes(category)} onChange={(event) => update("categories", event.target.checked ? [...draft.categories, category] : draft.categories.filter((item) => item !== category))} />
+                <input type="checkbox" className="accent-teal-400" checked={draft.categories.includes(category)} onChange={(event) => {
+                  const next = event.target.checked
+                    ? [...draft.categories, category]
+                    : draft.categories.filter((item) => item !== category);
+                  update("categories", next);
+                }} />
                 {category}
               </label>
             ))}

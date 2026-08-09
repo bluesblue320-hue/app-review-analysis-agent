@@ -107,7 +107,9 @@ docker compose up --build -d
 
 默认访问 `http://127.0.0.1:8080`，可通过 `WEB_PORT` 修改宿主端口。Compose 只发布 `web` 的 Nginx 端口；FastAPI、PostgreSQL 和 Redis 只在内部网络可达。API 容器先运行 `alembic upgrade head`，再启动单 Uvicorn worker。
 
-### 生产鉴权
+### 生产服务访问保护
+
+`APP_ACCESS_TOKEN` 用于保护 Nginx → FastAPI 的内部服务访问，并让浏览器无需持有服务器共享 Secret。它不是最终用户身份认证：当前版本未实现用户登录、JWT、RBAC 或多用户身份隔离；能够访问 Web 页面的用户共享同一条由 Nginx 注入的服务器侧令牌。
 
 - `APP_ACCESS_TOKEN` 只存在于 Compose/server environment，并在 Nginx 运行时模板展开后作为 `Authorization: Bearer ...` 注入代理请求。
 - React bundle 不读取 `APP_ACCESS_TOKEN`，没有 `VITE_APP_ACCESS_TOKEN`，也不把共享 token 写入 localStorage/sessionStorage。
@@ -181,6 +183,7 @@ GitHub Actions 保留 Python、PostgreSQL、Redis、Alembic 与双 Adapter mock 
 
 ## 已知限制
 
+- `APP_ACCESS_TOKEN` 只提供 Nginx → FastAPI 的共享服务访问保护，不提供最终用户登录、JWT、RBAC 或多用户认证。
 - 散点图使用摘要 API 返回的最多 100 条预览数据；评论池仍严格使用服务端分页。
 - AI 洞察 schema 的 `insights` 内容由模型返回，因此 UI 对未知扩展字段采用安全降级展示。
 - Live Agent evaluation 需要显式 `--mode live` 和有效模型密钥，不属于普通 CI 门禁。

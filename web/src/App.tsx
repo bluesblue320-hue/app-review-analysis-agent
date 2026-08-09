@@ -1,5 +1,9 @@
 import { Dashboard } from "./pages/Dashboard";
+import { useDataset } from "./context/DatasetContext";
 
 export default function App() {
-  return <Dashboard />;
+  const { dataset } = useDataset();
+  const datasetId = dataset?.metadata.dataset_id ?? "welcome";
+
+  return <Dashboard key={datasetId} />;
 }

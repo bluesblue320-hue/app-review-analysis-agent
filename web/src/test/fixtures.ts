@@ -1,4 +1,4 @@
-import type { AgentQueryResponse, AnalyticsSummary, DatasetUploadResponse, ReviewSearchResponse } from "../types/api";
+import type { AgentQueryResponse, AIInsightResponse, AnalyticsSummary, DatasetUploadResponse, ReviewSearchResponse } from "../types/api";
 
 export const dataset: DatasetUploadResponse = {
   dataset_id: "dataset_test",
@@ -10,6 +10,13 @@ export const dataset: DatasetUploadResponse = {
   columns: ["评分", "内容", "版本"],
   created_at: "2026-08-09T00:00:00Z",
   expires_at: "2026-09-08T00:00:00Z",
+};
+
+export const datasetB: DatasetUploadResponse = {
+  ...dataset,
+  dataset_id: "dataset_test_b",
+  created_at: "2026-08-10T00:00:00Z",
+  expires_at: "2026-09-09T00:00:00Z",
 };
 
 export const summary: AnalyticsSummary = {
@@ -39,6 +46,18 @@ export const reviewPage: ReviewSearchResponse = {
   offset: 0,
   limit: 20,
   next_offset: 20,
+};
+
+export const insightResponse: AIInsightResponse = {
+  insight_id: "insight_dataset_a",
+  insights: {
+    summary: "旧数据集的 AI 洞察",
+    pain_points: [],
+    delighters: [],
+    recommendations: [],
+  },
+  sample_size: 2,
+  scope_signature: summary.scope_signature,
 };
 
 export const agentResponse: AgentQueryResponse = {

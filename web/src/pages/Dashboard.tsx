@@ -27,6 +27,7 @@ export function Dashboard() {
     queryFn: () => getAnalyticsSummary(datasetId, filters, insight?.insight_id),
     enabled: Boolean(datasetId),
   });
+  const filterPanelKey = `${datasetId}:${JSON.stringify(filters)}:${summary.data?.available_categories.join("|") ?? ""}`;
 
   function applyFilters(next: Filters) {
     setFilters(next);
@@ -44,7 +45,7 @@ export function Dashboard() {
       <div className="app-shell">
         <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
           <div><div className="sidebar-title"><Database size={15} />数据集</div><DatasetUpload /></div>
-          <div className="mt-7 border-t border-slate-800/80 pt-6"><div className="sidebar-title"><Sparkles size={15} />分析范围</div><FilterPanel filters={filters} categories={summary.data?.available_categories ?? []} onApply={applyFilters} disabled={!dataset} /></div>
+          <div className="mt-7 border-t border-slate-800/80 pt-6"><div className="sidebar-title"><Sparkles size={15} />分析范围</div><FilterPanel key={filterPanelKey} filters={filters} categories={summary.data?.available_categories ?? []} onApply={applyFilters} disabled={!dataset} /></div>
           <p className="mt-8 text-[11px] leading-5 text-slate-700">筛选仅在点击“应用筛选”后提交。所有指标和 AI 范围都由后端重新计算。</p>
         </aside>
 

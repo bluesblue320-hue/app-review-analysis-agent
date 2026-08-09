@@ -62,7 +62,7 @@ export function AIInsightPanel({
       {config.data && !config.data.configured && <NoticeList items={["后端未配置模型密钥。确定性看板和规则 Agent 仍可正常使用。"]} />}
       {showConsent && (
         <div className="mb-4 rounded-2xl border border-amber-400/25 bg-amber-400/8 p-4">
-          <div className="flex gap-3"><ShieldAlert className="mt-0.5 shrink-0 text-amber-300" size={20} /><div><p className="font-medium text-amber-100">确认发送分析摘要</p><p className="mt-1 text-sm leading-6 text-amber-100/70">当前筛选范围内的评论摘要将发送给外部大模型。此确认只在当前浏览器会话中有效。</p></div></div>
+          <div className="flex gap-3"><ShieldAlert className="mt-0.5 shrink-0 text-amber-300" size={20} /><div><p className="font-medium text-amber-100">确认发送脱敏分析数据</p><p className="mt-1 text-sm leading-6 text-amber-100/70">当前筛选范围的统计信息及部分评论样本将在完成敏感信息脱敏后发送给外部大模型，用于生成 AI 洞察。本次确认仅在当前浏览器会话中有效。</p></div></div>
           <div className="mt-4 flex justify-end gap-2"><button className="secondary-button" onClick={() => setShowConsent(false)}>取消</button><button className="primary-button" onClick={confirm}>确认并生成</button></div>
         </div>
       )}
