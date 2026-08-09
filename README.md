@@ -1,257 +1,187 @@
-# App 评论舆情分析 Agent
+# App Review Intelligence
 
-一个面向 App Store 评论的中文舆情分析应用。项目由 Streamlit 前端、FastAPI 后端、确定性分析模块和受控 DeepSeek Agent 组成，可完成数据清洗、情绪分析、看板筛选、版本对比、风险识别、AI 洞察和自然语言问答。支持 Direct / LangChain 双 Agent Adapter、PostgreSQL 持久化与 Redis 缓存，生产环境通过 Docker Compose 部署。
-
-> 本项目所有性能、覆盖率和评估数字均来自仓库内可重复运行的测试与报告（`evaluation/reports/`、`docs/execution/`），未宣称未测量的结果。
+面向 App Store 中文评论的工程化 AI 分析应用。浏览器端使用 React + TypeScript，所有数据清洗、情绪分析、关键词、问题分类、风险计算、指标、AI 洞察和受控 Tool Calling 均由 FastAPI 后端负责。生产环境由 Nginx 提供静态文件、反向代理 API，并在服务器侧注入共享访问令牌。
 
 ## 核心能力
 
-- 上传 CSV 后统一执行数据清洗、中文分词、情绪评分、问题分类和风险标记。
-- 展示评论数、平均评分、差评占比、平均情绪、高风险评论、关键词、趋势和问题优先级。
-- 支持评分、情绪、问题类型、关键词和高风险条件筛选；筛选使用 `st.form`，仅提交时请求。
-- 后端重新执行所有筛选和指标计算，不信任前端传入的样本数量。
-- 评论池使用 `view + offset + limit` 分页，不依赖摘要前 100 条预览。
-- 受控 Tool Calling Agent：规则快速路由 / DeepSeek 工具调用 / 规则降级三路径。
-- Direct 与 LangChain 双 Adapter，通过 `AGENT_ADAPTER` 切换，共享同一 Orchestrator。
-- 数据集与 AI 洞察持久化到 PostgreSQL（可重启恢复），确定性摘要缓存到 Redis。
-- AI 洞察首次模型调用前要求当前会话确认。
+- CSV 拖放上传，后端统一校验、清洗、分词、情绪评分、问题分类和风险标记。
+- 草稿筛选与提交筛选分离；只有点击“应用筛选”才重新请求后端。
+- KPI、评分/情绪分布、评分情绪散点、正负关键词、趋势和问题优先级图表。
+- 评论池使用服务端 `view + offset + limit` 分页，不下载完整数据集。
+- AI 洞察与 `dataset_id + scope_signature` 绑定，当前会话首次模型调用前必须确认。
+- Agent 会话展示意图、路由、工具状态/参数/耗时/错误、证据 ID、表格、warnings 和 limitations。
+- Direct / LangChain 双 Adapter 共享同一受控 Agent Orchestrator；模型不可用时保留规则降级。
+- PostgreSQL 持久化数据集与洞察，Redis 缓存确定性摘要并提供短锁。
+
+## 架构
+
+```text
+Browser
+  └─ React + TypeScript (Vite, TanStack Query, ECharts, Tailwind CSS)
+       └─ /api/* same-origin requests
+            └─ Nginx
+                 ├─ /             → React static files + SPA fallback
+                 └─ /api/*        → FastAPI + server-side Bearer token
+                      ├─ Deterministic analytics / preprocessing
+                      ├─ Controlled Agent (Direct / LangChain)
+                      ├─ AI insights
+                      ├─ PostgreSQL + Alembic
+                      └─ Redis cache + insight lock
+```
+
+FastAPI 是唯一业务后端。React 不直接访问 DeepSeek、PostgreSQL 或 Redis，也不复制 Python 分析逻辑。
 
 ## 技术栈
 
-- Python 3.12、Pandas、jieba、SnowNLP、scikit-learn
-- Streamlit 前端与 Requests HTTP Client
-- FastAPI、Pydantic、Uvicorn、SQLAlchemy 2、Alembic
-- PostgreSQL 16、Redis 7
-- LangChain（`ChatDeepSeek`，可选 extra）
-- pytest、pytest-cov、Ruff、GitHub Actions
+- Web：React 19、TypeScript、Vite、TanStack Query、ECharts、Tailwind CSS
+- API：Python 3.12、FastAPI、Pydantic、Uvicorn
+- 分析：Pandas、jieba、SnowNLP、scikit-learn、pyecharts（离线词云模块）
+- Agent：受控工具白名单、Direct Adapter、LangChain Adapter、规则降级
+- 数据：PostgreSQL 16、SQLAlchemy 2、Alembic、Redis 7
+- 质量：pytest、pytest-cov、Ruff、Vitest、React Testing Library、ESLint、GitHub Actions
 
-## 系统架构
+## API 契约
 
-```text
-浏览器
-  └─ Streamlit（app.py → frontend/components.py，仅装配与展示）
-       └─ frontend/api_client.py（唯一 HTTP Client，令牌仅存 Session）
-            └─ FastAPI（backend/main.py）
-                 ├─ 数据集 Repository（内存 / PostgreSQL + Alembic）
-                 ├─ Insight Repository（fingerprint 去重 + 唯一约束）
-                 ├─ 确定性分析（评分过滤、情绪、关键词、趋势、优先级）
-                 ├─ Redis 缓存（分析摘要）+ Insight 短锁（减少重复模型调用）
-                 └─ 受控 Agent（双 Adapter，单次规划最多选择 3 个只读分析工具）
-
-共享业务层
-  ├─ review_preprocessing.py   # 清洗、分词、情绪
-  ├─ visual_analysis.py        # 确定性指标与筛选
-  ├─ agent_workflow.py         # 原规则工作流与降级
-  ├─ ai_analysis.py            # DeepSeek 洞察
-  └─ review_fields.py          # 统一字段常量
-```
-
-## 八个核心工具与机制
-
-| # | 机制 | 说明 |
-| --- | --- | --- |
-| 1 | 评分严格过滤 | 1～5 范围外评分删除并统计原因（`removed_rows/invalid_reasons`） |
-| 2 | 服务端范围签名 | `sha256(content_hash + canonical_filters + analysis_version)` |
-| 3 | Insight fingerprint | 固定字段顺序 SHA-256，数据库 `UNIQUE` 保证最终单条记录 |
-| 4 | 原子 insert-or-get-existing | 唯一约束冲突回滚后读取已有记录，不返回 500 |
-| 5 | 受控 Tool Calling | 白名单 + Pydantic 参数校验 + 单次规划最多选择 3 个只读工具 |
-| 6 | 回答可信度校验 | 数字须有工具证据；绝对结论受 Guardrail 约束 |
-| 7 | 规则降级 | 模型未配置/超时/非法工具/校验失败 → 原规则工作流 |
-| 8 | PII 脱敏 | 构造模型消息前统一替换手机/邮箱/身份证/银行卡 |
-
-## 受控 Tool Calling（Agent）
-
-Agent 根据问题复杂度选择执行路径：
-
-- 单一、明确的问题使用规则快速路由，不调用大模型。
-- 复杂或跨维度问题由 DeepSeek（Direct 或 LangChain `bind_tools`）选择只读分析工具。
-- 单次请求最多 3 个工具；工具名称白名单校验；参数 Pydantic 校验。
-- 模型回答数字必须能在工具结果中找到证据；伪造 evidence ID 触发降级。
-- 未配置、超时、非法 JSON、非法工具或校验失败时自动降级到原规则工作流。
-- 响应返回 intent、routing、tool calls（名称/状态/耗时/参数/错误）、evidence_call_ids、limitations、warnings。
-
-### 切换 Adapter
-
-```bash
-AGENT_ADAPTER=direct      # 默认：原生 DeepSeek Tool Calling
-AGENT_ADAPTER=langchain   # LangChain ChatDeepSeek（需要 pip install -e ".[langchain]"）
-```
-
-## API
-
-FastAPI 默认监听 `http://127.0.0.1:8000`，统一 `/api/v1` 前缀：
+统一前缀是 `/api/v1`，只在 `web/src/api/client.ts` 定义一次。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/v1/health` | 存活检查 |
-| `GET` | `/api/v1/ready` | 就绪检查（存储不可达返回 503） |
-| `POST` | `/api/v1/datasets` | 上传 CSV 返回 `dataset_id` 与统计 |
-| `POST` | `/api/v1/analytics/summary` | 服务端筛选并生成看板汇总 |
-| `POST` | `/api/v1/reviews/search` | `view + offset + limit` 评论分页 |
-| `GET` | `/api/v1/ai/config` | AI 配置状态（不含 API Key） |
-| `POST` | `/api/v1/ai/insights` | 生成并保存 AI 洞察，返回 `insight_id` |
+| `GET` | `/api/v1/health` | 存活检查（公开） |
+| `GET` | `/api/v1/ready` | PostgreSQL migration / Redis 就绪状态（公开） |
+| `POST` | `/api/v1/datasets` | multipart CSV 上传 |
+| `DELETE` | `/api/v1/datasets/{dataset_id}` | 删除数据集及关联洞察/缓存 |
+| `POST` | `/api/v1/analytics/summary` | 服务端筛选与完整看板摘要 |
+| `POST` | `/api/v1/analytics/reviews/search` | 评论服务端分页 |
+| `GET` | `/api/v1/ai/config` | AI provider/model/configured 状态，不返回密钥 |
+| `POST` | `/api/v1/ai/insights` | 生成或复用当前范围洞察 |
 | `POST` | `/api/v1/agent/query` | 规则路由或受控 Tool Calling |
 
-所有接口（除 health/ready）需要 `Authorization: Bearer <token>`；启动前设置 `APP_ACCESS_TOKEN`。开发环境默认不启用鉴权（`APP_ENV=development`）；`APP_ENV=production` 时 `APP_ACCESS_TOKEN` 必填。
+错误统一为：
 
-## 快速开始（本地）
+```json
+{
+  "error": { "code": "validation_error", "message": "..." },
+  "request_id": "..."
+}
+```
 
-### 1. 安装
+Web client 统一处理 timeout、网络错误、非法 JSON、401、404、409、413、415、422、500/503，并发送/展示 `X-Request-ID`。
 
-```bash
-git clone https://github.com/bluesblue320-hue/app-review-analysis-agent.git
-cd app-review-analysis-agent
+## CSV 格式
+
+必须包含 `评分`（1～5）与 `内容`。可选字段包括 `版本`、`时间`、`日期`、`评论时间`、`发布时间` 和 `标题`。评论预览/分页响应会返回可空的 `version`。
+
+## 本地开发
+
+### 后端
+
+项目要求 Python 3.12。
+
+```powershell
 python -m venv .venv
-source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev,langchain]"
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 2. 启动（两个终端）
+开发环境默认使用内存 Store 且未配置 `APP_ACCESS_TOKEN` 时允许请求。需要数据库存储时配置 `DATABASE_URL`、`STORAGE_BACKEND=database` 并运行 `alembic upgrade head`。
 
-```bash
-# 终端一：FastAPI（默认 SQLite + 内存缓存）
-uvicorn backend.main:app --reload
+### 前端
 
-# 终端二：Streamlit
-streamlit run app.py
+```powershell
+cd web
+npm ci
+npm run dev
 ```
 
-验证：`curl http://127.0.0.1:8000/api/v1/health`
+打开 `http://127.0.0.1:5173`。Vite 将 `/api` 代理到 `http://127.0.0.1:8000`，无需 CORS，也不需要浏览器 token。
 
-### 3. DeepSeek 配置（可选）
+## 生产部署
 
-创建未提交的 `.env`：
+复制环境模板并设置强随机令牌：
 
-```env
-DEEPSEEK_API_KEY=your_api_key
-AI_PROVIDER=deepseek
-AI_MODEL=deepseek-v4-flash
-AGENT_ADAPTER=direct
-```
-
-不配置 DeepSeek 也可使用看板与规则 Agent；复杂问题自动降级。
-
-### 4. 生产存储（PostgreSQL + Redis + 迁移）
-
-```bash
-export DATABASE_URL="postgresql+psycopg2://app:app@localhost:5432/app"
-export REDIS_URL="redis://localhost:6379/0"
-export STORAGE_BACKEND=database
-alembic upgrade head
-uvicorn backend.main:app --workers 1
-```
-
-## Docker Compose（生产）
-
-```bash
-cp .env.example .env        # 设置 APP_ACCESS_TOKEN（必填）、DEEPSEEK_API_KEY
+```powershell
+Copy-Item .env.example .env
 docker compose up --build -d
 ```
 
-- 仅 Streamlit `8501` 暴露到宿主机；FastAPI、PostgreSQL、Redis 在内部网络。
-- `api` 容器启动时先 `alembic upgrade head` 再启动 Uvicorn 单 worker。
-- 数据持久化到 `postgres_data` / `redis_data` 卷。
-- 就绪探针：`curl /api/v1/ready`。
+默认访问 `http://127.0.0.1:8080`，可通过 `WEB_PORT` 修改宿主端口。Compose 只发布 `web` 的 Nginx 端口；FastAPI、PostgreSQL 和 Redis 只在内部网络可达。API 容器先运行 `alembic upgrade head`，再启动单 Uvicorn worker。
 
-## CSV 数据格式
+### 生产鉴权
 
-至少包含 `评分`（1～5）与 `内容`：
+- `APP_ACCESS_TOKEN` 只存在于 Compose/server environment，并在 Nginx 运行时模板展开后作为 `Authorization: Bearer ...` 注入代理请求。
+- React bundle 不读取 `APP_ACCESS_TOKEN`，没有 `VITE_APP_ACCESS_TOKEN`，也不把共享 token 写入 localStorage/sessionStorage。
+- `DEEPSEEK_API_KEY` 只传给 FastAPI 容器；`GET /ai/config` 只暴露 provider、model 和 configured 布尔值。
+- 浏览器与 Nginx 同源通信；Nginx 将 `X-Request-ID` 传给 FastAPI。
 
-| 字段 | 必需 | 说明 |
+## 环境变量
+
+| 变量 | 用途 | 生产要求 |
 | --- | --- | --- |
-| `评分` | 是 | 1～5 星 |
-| `内容` | 是 | 评论正文 |
-| `时间` / `日期` / `评论时间` / `发布时间` | 否 | 趋势分析 |
-| `版本` | 否 | 版本对比 |
-| `标题` | 否 | 评论标题 |
+| `APP_ENV` | `development` / `production` | Compose 固定为 production |
+| `APP_ACCESS_TOKEN` | API 共享访问令牌 | 必填，只在 api/web 容器运行时存在 |
+| `DEEPSEEK_API_KEY` | AI 洞察与复杂 Tool Calling | 可选，只在 api 容器 |
+| `AI_PROVIDER` / `AI_MODEL` | 模型配置 | 可选 |
+| `AGENT_ADAPTER` | `direct` / `langchain` | 默认 direct |
+| `DATABASE_URL` | PostgreSQL DSN | 生产必需 |
+| `REDIS_URL` | 缓存/短锁 | 生产建议 |
+| `STORAGE_BACKEND` | `memory` / `database` | 生产为 database |
+| `DATA_RETENTION_DAYS` | 数据保留天数 | 默认 30 |
+| `MAX_UPLOAD_SIZE_MB` | FastAPI 上传限制 | 默认 10 |
+| `LLM_TIMEOUT_SECONDS` | 模型超时 | 默认 60 |
+| `LLM_MAX_TOOL_CALLS` | 单次最多工具调用 | 上限 3 |
+| `WEB_PORT` | Nginx 宿主端口 | 默认 8080 |
 
-后端生成 `分词内容`、`情绪指数`、`问题类型`、`风险标签` 等分析字段。
+## 测试与质量
 
-## 测试、质量与评估
+```powershell
+# Python
+python -m ruff check .
+python -m ruff format --check .
+python -m pytest
+python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 
-```bash
-python -m ruff check .                    # Lint
-python -m ruff format --check .           # 格式
-python -m pytest                          # 全量测试
-python -m pytest --cov=. --cov-report=xml # 覆盖率（门禁 80%）
-python -m compileall -q backend frontend evaluation tests
-
-# Agent 评估（Mock 为确定性 CI 门禁）
+# 确定性 Agent 门禁（不会调用真实模型）
 python -m evaluation.evaluate_agent --mode mock --adapter direct --fail-under
 python -m evaluation.evaluate_agent --mode mock --adapter langchain --fail-under
-python -m evaluation.evaluate_agent --mode live --output-dir evaluation/reports/live  # 需要 API Key
 
-# 数据 / 性能 / 故障 / 备份
-python -m evaluation.generate_fixture --rows 10000
-python -m evaluation.benchmark --rows 10000 --runs 3
-python -m evaluation.failure_drill
-python -m evaluation.backup_drill --database-url postgresql+psycopg2://app:app@localhost:5432/app
+# Web
+cd web
+npm run lint
+npm run typecheck
+npm run test
+npm run build
 ```
 
-### 当前基线（仓库内可复现）
-
-- 完整 pytest：**385 passed + 3 subtests**。
-- 全项目覆盖率：最新 CI Linux 基线为 **90.10%**，硬门禁保持 **80%**。
-- Agent Mock 评估：**Direct 46/46、LangChain 46/46**。
-- 性能（10,000 行 × 3 次，`evaluation/reports/perf/benchmark.json`）：上传 P95 24.8s、预热摘要 P95 56ms、分页 P95 2.6ms、规则 Agent P95 188ms。
-- 故障演练 6/6 通过（`evaluation/reports/failure-drill/report.json`）。
-
-## 数据模型与迁移
-
-- `datasets`：`content_hash`、`analysis_version`、统计字段、过期时间。
-- `reviews`：`(dataset_id, row_number)` 唯一；固定分析字段独立列，其余入 `payload_json`。
-- `insights`：`insight_fingerprint` 唯一；`provider/model_name/analysis_version`；过期时间。
-- 迁移：`alembic upgrade head` / `downgrade base`（生产不自动 downgrade）。
-
-## Redis 契约
-
-- 分析缓存 Key：`ara:{env}:v1:analytics:{dataset_id}:{scope_signature}:{analysis_type}:{insight_id_or_none}`。
-- Insight 短锁：`ara:{env}:v1:lock:insight:{dataset_id}:{scope_signature}`（`SET NX EX` + token 安全释放）。
-- 缓存值含 `schema_version`，版本不匹配视为 miss。
-- Redis 故障全部降级：读失败→miss、写失败→忽略、锁失败→放行；数据唯一性始终由 PostgreSQL 约束保证。
-
-## 降级与故障行为
-
-| 故障 | 行为 |
-| --- | --- |
-| DeepSeek 未配置 / 超时 / 5xx / 非法 JSON | Agent 降级到规则工作流；AI 洞察报可读错误 |
-| Redis 断开 / 超时 | 缓存 miss、短锁放行；功能不受影响（允许重复模型调用，PG 兜底唯一） |
-| PostgreSQL 不可用 | `/ready` 返回 503；请求返回明确服务错误 |
-| 数据集过期 / 删除 | 返回 `dataset_not_found`；缓存残留不影响（读前验证存在性） |
-| 非法工具 / 参数 | 工具被拒 / 校验失败；整体降级到规则 |
-
-## 已知限制
-
-- 本地默认使用 SQLite + 内存缓存（`STORAGE_BACKEND` 默认按 `APP_ENV` 选择）；生产必须配置 PostgreSQL。
-- LangChain 依赖当前 CI 验证组合：`langchain-core==0.3.70`、`langchain-deepseek==0.1.4`、`langchain-openai==0.3.28`、`langsmith==0.3.45`（与 `pyproject.toml` 一致；升级版本以 `pyproject.toml` 为事实来源并在 CI 验证）。
-- Windows 开发机全量 coverage 偶发 Segfault（pandas/jieba 原生扩展与 coverage 追踪器冲突）；CI Linux 为最终覆盖验收环境。
-- Live 评估需要 `DEEPSEEK_API_KEY`，结果随模型波动，不作为普通 PR CI 门禁。
-- 上传真实用户评论前请确认数据授权、隐私与合规要求；部分工具结果或评论样本可能发送到模型服务。
+GitHub Actions 保留 Python、PostgreSQL、Redis、Alembic 与双 Adapter mock evaluation 门禁，并新增独立 frontend job。历史性能/评估结果保存在 `evaluation/reports/` 与 `docs/execution/`；这些历史报告不等同于当前机器重新测量的结果。
 
 ## 项目结构
 
 ```text
 .
-├─ app.py                         # Streamlit 装配入口（仅编排）
-├─ frontend/
-│  ├─ api_client.py               # 统一 HTTP Client
-│  └─ components.py               # Streamlit 组件（上传/筛选/看板/分页/AI/Agent）
+├─ web/                          # React + TypeScript Web application
+│  ├─ src/api/                   # 唯一 HTTP 边界
+│  ├─ src/components/            # upload/filter/charts/reviews/AI/Agent
+│  ├─ src/context/               # dataset session state
+│  ├─ src/pages/Dashboard.tsx
+│  └─ src/test/                  # Vitest + RTL 核心路径测试
 ├─ backend/
-│  ├─ main.py                     # FastAPI 入口
+│  ├─ main.py                    # FastAPI entrypoint
 │  ├─ routers/ schemas/ services/ core/
-│  ├─ agent/                      # Tool Calling + 双 Adapter
-│  └─ storage/                    # SQLAlchemy 模型与运行
-├─ alembic/                       # 数据库迁移
-├─ evaluation/                    # Agent 评估、基准、故障演练、备份演练、夹具
-├─ Dockerfile.api / Dockerfile.streamlit / docker-compose.yml
-├─ pyproject.toml                 # 依赖（base/langchain/dev）
-└─ tests/                         # 单元 + 集成测试
+│  ├─ agent/                     # Orchestrator、工具与双 Adapter
+│  └─ storage/                   # SQLAlchemy runtime
+├─ alembic/                      # PostgreSQL migrations
+├─ evaluation/                   # Agent evaluation / benchmark / drills
+├─ tests/                        # Python unit + integration tests
+├─ Dockerfile.api
+├─ Dockerfile.web                # Node build → Nginx runtime
+├─ nginx.conf.template
+└─ docker-compose.yml            # postgres + redis + api + web
 ```
 
-## 示例数据采集
+## 已知限制
 
-```bash
-python spider.py
-```
-
-默认用于抓取小红书中国区 App Store 评论；使用前请检查应用 ID、页数与平台条款。
+- 散点图使用摘要 API 返回的最多 100 条预览数据；评论池仍严格使用服务端分页。
+- AI 洞察 schema 的 `insights` 内容由模型返回，因此 UI 对未知扩展字段采用安全降级展示。
+- Live Agent evaluation 需要显式 `--mode live` 和有效模型密钥，不属于普通 CI 门禁。
+- 上传真实评论前应确认授权、隐私与外部模型数据处理要求。

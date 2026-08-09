@@ -14,7 +14,6 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY backend ./backend
-COPY frontend ./frontend
 COPY review_fields.py review_preprocessing.py visual_analysis.py intent_router.py nlp_analysis.py agent_workflow.py ai_analysis.py ./
 COPY alembic.ini ./
 COPY alembic ./alembic

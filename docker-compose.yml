@@ -1,5 +1,5 @@
 # App Review Analysis Agent - production Compose
-# Only Streamlit (8501) is exposed; FastAPI/PostgreSQL/Redis stay internal.
+# Only Nginx/React is exposed; FastAPI/PostgreSQL/Redis stay internal.
 
 services:
   postgres:
@@ -64,18 +64,22 @@ services:
       retries: 5
     restart: unless-stopped
 
-  streamlit:
+  web:
     build:
       context: .
-      dockerfile: Dockerfile.streamlit
+      dockerfile: Dockerfile.web
     environment:
-      BACKEND_URL: http://api:8000/api/v1
       APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:?APP_ACCESS_TOKEN must be set}
     ports:
-      - "8501:8501"
+      - "${WEB_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:

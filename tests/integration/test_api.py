@@ -252,7 +252,14 @@ def test_summary_finds_rating_sentiment_mismatch_after_review_preview_limit(
     assert mismatch["content"] == mismatch_content
     assert mismatch["rating"] == 5
     assert mismatch["sentiment"] == 10.0
-    assert set(mismatch) == {"rating", "sentiment", "category", "risk_label", "content"}
+    assert set(mismatch) == {
+        "rating",
+        "sentiment",
+        "category",
+        "risk_label",
+        "content",
+        "version",
+    }
 
 
 def test_summary_reapplies_filters_on_server(client: TestClient):

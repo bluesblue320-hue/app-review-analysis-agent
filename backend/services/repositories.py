@@ -9,17 +9,19 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import pandas as pd
 
 from backend.core.exceptions import DatasetNotFoundError
 from backend.services.dataset_service import DatasetRecord
-from backend.services.insight_store import InsightNotFoundError, InsightRecord
 from backend.services.model_config import (
     DEFAULT_AI_MODEL,
     DEFAULT_AI_PROVIDER,
 )
+
+if TYPE_CHECKING:
+    from backend.services.insight_store import InsightNotFoundError, InsightRecord
 
 ANALYSIS_VERSION = "v1"
 
@@ -130,7 +132,7 @@ def canonical_filters(filters: dict[str, Any] | None) -> str:
             return value.strip() or "__EMPTY__"
         if isinstance(value, bool):
             return value
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return f"{float(value):.6f}"
         return value
 
@@ -183,6 +185,8 @@ def make_not_found(dataset_id: str) -> DatasetNotFoundError:
 
 
 def make_insight_not_found(insight_id: str) -> InsightNotFoundError:
+    from backend.services.insight_store import InsightNotFoundError
+
     return InsightNotFoundError(insight_id)
 
 

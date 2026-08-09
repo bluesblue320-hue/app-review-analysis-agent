@@ -54,7 +54,7 @@ jobs:
           python -m ruff format --check .
 
       - name: Compile check
-        run: python -m compileall -q backend frontend evaluation tests
+        run: python -m compileall -q backend evaluation tests
 
       - name: Application import check
         run: python -c "from backend.main import app; print('app import ok')"
@@ -108,3 +108,33 @@ jobs:
 
       - name: Whitespace check
         run: git diff --check
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Production build
+        run: npm run build

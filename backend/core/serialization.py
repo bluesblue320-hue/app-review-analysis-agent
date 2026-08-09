@@ -20,7 +20,7 @@ def to_json_value(value: Any) -> Any:
         return [to_json_value(item) for item in value.tolist()]
     if isinstance(value, Mapping):
         return {str(key): to_json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list | tuple | set):
         return [to_json_value(item) for item in value]
     if isinstance(value, float) and not math.isfinite(value):
         return None
@@ -29,7 +29,7 @@ def to_json_value(value: Any) -> Any:
             return None
     except (TypeError, ValueError):
         pass
-    if isinstance(value, (datetime, date, pd.Timestamp)):
+    if isinstance(value, datetime | date | pd.Timestamp):
         return value.isoformat()
     return value
 
