@@ -95,6 +95,7 @@ class HighRiskReviewItem(StrictModel):
     category: str
     risk_label: str
     content: str
+    version: str | None = None
 
 
 class ReviewPreviewItem(StrictModel):
@@ -103,6 +104,7 @@ class ReviewPreviewItem(StrictModel):
     category: str
     risk_label: str
     content: str
+    version: str | None = None
 
 
 class RatingSentimentMismatchItem(StrictModel):
@@ -111,6 +113,7 @@ class RatingSentimentMismatchItem(StrictModel):
     category: str
     risk_label: str
     content: str
+    version: str | None = None
 
 
 class ReviewSearchResponse(StrictModel):

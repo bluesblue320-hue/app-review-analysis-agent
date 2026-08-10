@@ -32,6 +32,7 @@ from review_fields import (
     RISK_LABEL_COLUMN,
     SENTIMENT_COLUMN,
     TOKEN_COLUMN,
+    VERSION_COLUMN,
 )
 from visual_analysis import (
     LOW_SENTIMENT,
@@ -145,24 +146,7 @@ class AnalyticsService:
             [RATING_COLUMN, SENTIMENT_COLUMN],
             ascending=[True, True],
         ).head(settings.max_summary_review_rows)
-        high_risk_records = self._renamed_records(
-            high_risk[
-                [
-                    RATING_COLUMN,
-                    SENTIMENT_COLUMN,
-                    CATEGORY_COLUMN,
-                    RISK_LABEL_COLUMN,
-                    CONTENT_COLUMN,
-                ]
-            ],
-            {
-                RATING_COLUMN: "rating",
-                SENTIMENT_COLUMN: "sentiment",
-                CATEGORY_COLUMN: "category",
-                RISK_LABEL_COLUMN: "risk_label",
-                CONTENT_COLUMN: "content",
-            },
-        )
+        high_risk_records = self._review_records(high_risk)
         rating_sentiment_mismatches = filtered[
             (filtered[RATING_COLUMN] >= 4)
             & (filtered[SENTIMENT_COLUMN] < LOW_SENTIMENT)
@@ -172,41 +156,11 @@ class AnalyticsService:
             [SENTIMENT_COLUMN, RATING_COLUMN],
             ascending=[True, False],
         ).head(settings.max_summary_review_rows)
-        rating_sentiment_mismatch_records = self._renamed_records(
-            rating_sentiment_mismatches[
-                [
-                    RATING_COLUMN,
-                    SENTIMENT_COLUMN,
-                    CATEGORY_COLUMN,
-                    RISK_LABEL_COLUMN,
-                    CONTENT_COLUMN,
-                ]
-            ],
-            {
-                RATING_COLUMN: "rating",
-                SENTIMENT_COLUMN: "sentiment",
-                CATEGORY_COLUMN: "category",
-                RISK_LABEL_COLUMN: "risk_label",
-                CONTENT_COLUMN: "content",
-            },
+        rating_sentiment_mismatch_records = self._review_records(
+            rating_sentiment_mismatches
         )
-        review_records = self._renamed_records(
-            filtered[
-                [
-                    RATING_COLUMN,
-                    SENTIMENT_COLUMN,
-                    CATEGORY_COLUMN,
-                    RISK_LABEL_COLUMN,
-                    CONTENT_COLUMN,
-                ]
-            ].head(settings.max_summary_review_rows),
-            {
-                RATING_COLUMN: "rating",
-                SENTIMENT_COLUMN: "sentiment",
-                CATEGORY_COLUMN: "category",
-                RISK_LABEL_COLUMN: "risk_label",
-                CONTENT_COLUMN: "content",
-            },
+        review_records = self._review_records(
+            filtered.head(settings.max_summary_review_rows)
         )
         available_categories = sorted(
             record.dataframe[CATEGORY_COLUMN].dropna().astype(str).unique().tolist()
@@ -257,24 +211,7 @@ class AnalyticsService:
             ].sort_values([SENTIMENT_COLUMN, RATING_COLUMN], ascending=[True, False])
         total = int(len(filtered))
         page = filtered.iloc[request.offset : request.offset + request.limit]
-        items = self._renamed_records(
-            page[
-                [
-                    RATING_COLUMN,
-                    SENTIMENT_COLUMN,
-                    CATEGORY_COLUMN,
-                    RISK_LABEL_COLUMN,
-                    CONTENT_COLUMN,
-                ]
-            ],
-            {
-                RATING_COLUMN: "rating",
-                SENTIMENT_COLUMN: "sentiment",
-                CATEGORY_COLUMN: "category",
-                RISK_LABEL_COLUMN: "risk_label",
-                CONTENT_COLUMN: "content",
-            },
-        )
+        items = self._review_records(page)
         consumed = request.offset + len(items)
         return ReviewSearchResponse(
             items=items,
@@ -290,6 +227,29 @@ class AnalyticsService:
         columns: dict[str, str],
     ) -> list[dict[str, object]]:
         return dataframe_to_records(dataframe.rename(columns=columns))
+
+    def _review_records(self, dataframe: pd.DataFrame) -> list[dict[str, object]]:
+        """Serialize the shared review preview shape, including optional version."""
+        columns = [
+            RATING_COLUMN,
+            SENTIMENT_COLUMN,
+            CATEGORY_COLUMN,
+            RISK_LABEL_COLUMN,
+            CONTENT_COLUMN,
+        ]
+        if VERSION_COLUMN in dataframe.columns:
+            columns.append(VERSION_COLUMN)
+        return self._renamed_records(
+            dataframe[columns],
+            {
+                RATING_COLUMN: "rating",
+                SENTIMENT_COLUMN: "sentiment",
+                CATEGORY_COLUMN: "category",
+                RISK_LABEL_COLUMN: "risk_label",
+                CONTENT_COLUMN: "content",
+                VERSION_COLUMN: "version",
+            },
+        )
 
 
 def _valid_cache_payload(cached: dict) -> bool:

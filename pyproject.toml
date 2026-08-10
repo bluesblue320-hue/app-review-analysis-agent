@@ -8,7 +8,6 @@ version = "1.0.0"
 description = "App review analysis agent with deterministic tools, dual model adapters, PostgreSQL and Redis"
 requires-python = ">=3.12"
 dependencies = [
-    "streamlit==1.32.0",
     "pandas==2.2.1",
     "jieba==0.42.1",
     "scikit-learn==1.4.1.post1",
@@ -62,7 +61,6 @@ omit = [
     ".git/*",
     "tests/*",
     "evaluation/*",
-    "frontend/*",
     "__pycache__/*",
     ".pytest_cache/*",
 ]
