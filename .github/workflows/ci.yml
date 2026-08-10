@@ -138,3 +138,26 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Check browser bundle for server-only secret wiring
+        run: |
+          if grep -R -n -E 'VITE_(APP_ACCESS_TOKEN|DEEPSEEK_API_KEY)|Bearer[[:space:]]+\$\{APP_ACCESS_TOKEN\}' dist; then
+            echo "Server-only secret wiring found in browser bundle."
+            exit 1
+          fi
+
+  docker-build:
+    runs-on: ubuntu-latest
+    env:
+      APP_ACCESS_TOKEN: ci-compose-validation-token
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build FastAPI production image
+        run: docker build -f Dockerfile.api -t app-review-api:test .
+
+      - name: Build React/Nginx production image
+        run: docker build -f Dockerfile.web -t app-review-web:test .
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
