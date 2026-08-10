@@ -153,9 +153,16 @@ npm run lint
 npm run typecheck
 npm run test
 npm run build
+
+# 生产镜像与 Compose 配置
+cd ..
+$env:APP_ACCESS_TOKEN = "ci-validation-token"
+docker build -f Dockerfile.api -t app-review-api:test .
+docker build -f Dockerfile.web -t app-review-web:test .
+docker compose config --quiet
 ```
 
-GitHub Actions 保留 Python、PostgreSQL、Redis、Alembic 与双 Adapter mock evaluation 门禁，并新增独立 frontend job。历史性能/评估结果保存在 `evaluation/reports/` 与 `docs/execution/`；这些历史报告不等同于当前机器重新测量的结果。
+GitHub Actions 保留 Python、PostgreSQL、Redis、Alembic 与双 Adapter mock evaluation 门禁，并设置独立 frontend 和 docker-build job；前端 job 还会检查生产 Bundle，防止服务端 Secret 配置被打包进浏览器。历史性能/评估结果保存在 `evaluation/reports/` 与 `docs/execution/`；这些历史报告不等同于当前机器重新测量的结果。
 
 ## 项目结构
 
